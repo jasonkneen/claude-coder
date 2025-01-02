@@ -1,7 +1,8 @@
 import * as vscode from "vscode"
-import { HistoryItem } from "../../shared/history-item"
-import { KoduModelId } from "../../shared/api"
 import { ToolName } from "../../agent/v1/tools/types"
+import { KoduModelId } from "../../shared/api"
+import { HistoryItem } from "../../shared/history-item"
+import { McpServer } from "../../shared/mcp"
 
 type User = {
 	email: string
@@ -40,6 +41,7 @@ export type GlobalState = {
 	 * if number is set, the observer hook will be called every n-th time (which means that the hook is enabled)
 	 */
 	observerHookEvery: number | undefined
+	mcpServers: McpServer[] | undefined
 }
 
 export class GlobalStateManager {

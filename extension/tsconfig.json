@@ -1,32 +1,43 @@
 {
-	"compilerOptions": {
-		"esModuleInterop": true,
-		"experimentalDecorators": true,
-		"forceConsistentCasingInFileNames": true,
-		"isolatedModules": true,
-		"lib": ["es2022", "DOM", "ES2021.WeakRef"],
-		"module": "ESNext",
-		"moduleResolution": "bundler",
-		"noFallthroughCasesInSwitch": true,
-		"noImplicitOverride": true,
-		"noImplicitReturns": true,
-		"noUnusedLocals": false,
-		"resolveJsonModule": true,
-		"rootDir": ".",
-		"skipLibCheck": true,
-		"sourceMap": true,
-		"strict": true,
-		"target": "es2022",
-		"useDefineForClassFields": true,
-		"useUnknownInCatchVariables": true,
-		"noEmit": false,
-		"declaration": false,
-		"declarationMap": false,
-		// "paths": {
-		// 	"@/*": ["./src/*"]
-		// },
-		"types": ["node", "vscode", "jest"]
-	},
-	"include": ["src/**/*", "scripts/**/*", "test/**/*.ts"],
-	"exclude": ["node_modules", ".vscode-test", "webview-ui", "**/*.d.ts"]
+    "compilerOptions": {
+        "esModuleInterop": true,
+        "experimentalDecorators": true,
+        "forceConsistentCasingInFileNames": true,
+        "isolatedModules": true,
+        "lib": [
+            "es2022",
+            "DOM"
+        ],
+        "module": "Node16",
+        "moduleResolution": "node16",
+        "noFallthroughCasesInSwitch": true,
+        "noImplicitOverride": true,
+        "noImplicitReturns": true,
+        "noUnusedLocals": false,
+        "resolveJsonModule": true,
+        "rootDir": "src",
+        "skipLibCheck": true,
+        "sourceMap": true,
+        "strict": true,
+        "target": "es2022",
+        "useDefineForClassFields": true,
+        "useUnknownInCatchVariables": false,
+        "baseUrl": ".",
+        "paths": {
+            "@modelcontextprotocol/sdk": [
+                "node_modules/@modelcontextprotocol/sdk"
+            ],
+            "@modelcontextprotocol/sdk/*": [
+                "node_modules/@modelcontextprotocol/sdk/*"
+            ]
+        }
+    },
+    "include": [
+        "src/**/*"
+    ],
+    "exclude": [
+        "node_modules",
+        ".vscode-test",
+        "webview-ui"
+    ]
 }

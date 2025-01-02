@@ -190,7 +190,7 @@ importers:
         specifier: ^3.2.1
         version: 3.2.1
       esbuild:
-        specifier: ^0.24.0
+        specifier: ^0.24.2
         version: 0.24.2
       eslint:
         specifier: ^9.15.0

@@ -1,67 +1,72 @@
 import * as vscode from "vscode"
 import { KoduDev } from "../agent/v1"
-import { ExtensionStateManager } from "./state/extension-state-manager"
-import { WebviewManager } from "./webview/webview-manager"
-import { TaskManager } from "./state/task-manager"
-import { GlobalStateManager } from "./state/global-state-manager"
-import { ApiManager } from "./state/api-manager"
-import { HistoryItem } from "../shared/history-item"
-import { SecretStateManager } from "./state/secret-state-manager"
+import { McpHub } from "../services/mcp/McpHub"
+import { McpProvider } from "../services/mcp/McpProvider"
 import { extensionName } from "../shared/constants"
+import { HistoryItem } from "../shared/history-item"
+import { ApiManager } from "./state/api-manager"
+import { ExtensionStateManager } from "./state/extension-state-manager"
+import { GlobalStateManager } from "./state/global-state-manager"
+import { SecretStateManager } from "./state/secret-state-manager"
+import { TaskManager } from "./state/task-manager"
+import { WebviewManager } from "./webview/webview-manager"
 
-export class ExtensionProvider implements vscode.WebviewViewProvider {
+export class ExtensionProvider implements vscode.WebviewViewProvider, McpProvider {
 	public static readonly sideBarId = `${extensionName}.SidebarProvider`
 	public static readonly tabPanelId = `${extensionName}.TabPanelProvider`
 	private disposables: vscode.Disposable[] = []
 	private view?: vscode.WebviewView | vscode.WebviewPanel
-	private _koduDev?: KoduDev | undefined
-	public get koduDev(): KoduDev | undefined {
-		return this._koduDev
-	}
-	public set koduDev(value: KoduDev | undefined) {
-		this._koduDev = value
-	}
-	private stateManager: ExtensionStateManager
-	private webviewManager: WebviewManager
-	private secretStateManager: SecretStateManager
-	private taskManager: TaskManager
-	private globalStateManager: GlobalStateManager
-	private apiManager: ApiManager
+	private _koduDev?: KoduDev
+	private mcpHub!: McpHub
+	private stateManager!: ExtensionStateManager
+	private webviewManager!: WebviewManager
+	private secretStateManager!: SecretStateManager
+	private taskManager!: TaskManager
+	private globalStateManager!: GlobalStateManager
+	private apiManager!: ApiManager
 
 	constructor(readonly context: vscode.ExtensionContext, private readonly outputChannel: vscode.OutputChannel) {
 		this.outputChannel.appendLine("ExtensionProvider instantiated")
-		this.globalStateManager = GlobalStateManager.getInstance(context)
-		this.secretStateManager = SecretStateManager.getInstance(context)
+		this.initialize()
+	}
+
+	private initialize(): void {
+		// Initialize core services first
+		this.globalStateManager = GlobalStateManager.getInstance(this.context)
+		this.secretStateManager = SecretStateManager.getInstance(this.context)
 		this.stateManager = new ExtensionStateManager(this)
 		this.taskManager = new TaskManager(this)
 		this.apiManager = ApiManager.getInstance(this)
 		this.webviewManager = new WebviewManager(this)
+
+		// Initialize MCP after implementing required methods
+		this.mcpHub = new McpHub(this)
 	}
 
-	async dispose() {
-		this.outputChannel.appendLine("Disposing ExtensionProvider...")
-		await this.taskManager.clearTask()
-		this.outputChannel.appendLine("Cleared task")
-		if (this.view && "dispose" in this.view) {
-			this.view.dispose()
-			this.outputChannel.appendLine("Disposed webview")
-		}
-		while (this.disposables.length) {
-			const x = this.disposables.pop()
-			if (x) {
-				x.dispose()
-			}
-		}
-		this.outputChannel.appendLine("Disposed all disposables")
+	// McpProvider implementation
+	async ensureMcpServersDirectoryExists(): Promise<string> {
+		const serversPath = vscode.Uri.joinPath(this.context.globalStorageUri, 'mcp-servers').fsPath
+		await vscode.workspace.fs.createDirectory(vscode.Uri.file(serversPath))
+		return serversPath
 	}
 
-	resolveWebviewView(webviewView: vscode.WebviewView | vscode.WebviewPanel): void | Thenable<void> {
+	async ensureSettingsDirectoryExists(): Promise<string> {
+		const settingsPath = vscode.Uri.joinPath(this.context.globalStorageUri, 'mcp-settings').fsPath
+		await vscode.workspace.fs.createDirectory(vscode.Uri.file(settingsPath))
+		return settingsPath
+	}
+
+	async postMessageToWebview(message: any): Promise<void> {
+		await this.webviewManager.postMessageToWebview(message)
+	}
+
+	// WebviewViewProvider implementation
+	resolveWebviewView(webviewView: vscode.WebviewView): void | Thenable<void> {
 		this.outputChannel.appendLine("Resolving webview view")
 		this.view = webviewView
 
 		this.webviewManager.setupWebview(webviewView)
 
-		// Listen for when the view is disposed
 		webviewView.onDidDispose(
 			async () => {
 				await this.dispose()
@@ -70,11 +75,9 @@ export class ExtensionProvider implements vscode.WebviewViewProvider {
 			this.disposables
 		)
 
-		// Listen for when color changes
 		vscode.workspace.onDidChangeConfiguration(
 			(e) => {
 				if (e && e.affectsConfiguration("workbench.colorTheme")) {
-					// Sends latest theme name to webview
 					this.webviewManager.postBaseStateToWebview()
 				}
 			},
@@ -82,12 +85,21 @@ export class ExtensionProvider implements vscode.WebviewViewProvider {
 			this.disposables
 		)
 
-		// if the extension is starting a new session, clear previous task state
 		this.taskManager.clearTask()
 		this.outputChannel.appendLine("Webview view resolved")
 	}
 
-	async initWithTask(task?: string, images?: string[], isDebug?: boolean) {
+	// KoduDev property accessors
+	public get koduDev(): KoduDev | undefined {
+		return this._koduDev
+	}
+
+	public set koduDev(value: KoduDev | undefined) {
+		this._koduDev = value
+	}
+
+	// Initialization methods
+	async initWithTask(task?: string, images?: string[], isDebug?: boolean): Promise<void> {
 		await this.taskManager.clearTask()
 		const state = await this.stateManager.getState()
 		this.koduDev = new KoduDev({
@@ -107,7 +119,7 @@ export class ExtensionProvider implements vscode.WebviewViewProvider {
 		})
 	}
 
-	async initWithHistoryItem(historyItem: HistoryItem) {
+	async initWithHistoryItem(historyItem: HistoryItem): Promise<void> {
 		await this.taskManager.clearTask()
 		const state = await this.stateManager.getState()
 		this.koduDev = new KoduDev({
@@ -125,10 +137,7 @@ export class ExtensionProvider implements vscode.WebviewViewProvider {
 		})
 	}
 
-	/**
-	 * useful to initialize the provider without a task (e.g. when the user opens the extension for the first time and you want to test some functionality)
-	 */
-	async initWithNoTask() {
+	async initWithNoTask(): Promise<void> {
 		await this.taskManager.clearTask()
 		const state = await this.stateManager.getState()
 		this.koduDev = new KoduDev({
@@ -146,11 +155,34 @@ export class ExtensionProvider implements vscode.WebviewViewProvider {
 		})
 	}
 
-	getKoduDev() {
+	// Cleanup
+	async dispose(): Promise<void> {
+		this.outputChannel.appendLine("Disposing ExtensionProvider...")
+		await this.taskManager.clearTask()
+		this.outputChannel.appendLine("Cleared task")
+		if (this.view && "dispose" in this.view) {
+			this.view.dispose()
+			this.outputChannel.appendLine("Disposed webview")
+		}
+		while (this.disposables.length) {
+			const x = this.disposables.pop()
+			if (x) {
+				x.dispose()
+			}
+		}
+		this.outputChannel.appendLine("Disposed all disposables")
+	}
+
+	// Getters
+	getKoduDev(): KoduDev | undefined {
 		return this.koduDev
 	}
 
-	getStateManager() {
+	getMcpHub(): McpHub | undefined {
+		return this.mcpHub
+	}
+
+	getStateManager(): ExtensionStateManager {
 		return this.stateManager
 	}
 
@@ -158,31 +190,31 @@ export class ExtensionProvider implements vscode.WebviewViewProvider {
 		return this.stateManager.getState()
 	}
 
-	getWebviewManager() {
+	getWebviewManager(): WebviewManager {
 		return this.webviewManager
 	}
 
-	getTaskManager() {
+	getTaskManager(): TaskManager {
 		return this.taskManager
 	}
 
-	getSecretStateManager() {
+	getSecretStateManager(): SecretStateManager {
 		return this.secretStateManager
 	}
 
-	getGlobalStateManager() {
+	getGlobalStateManager(): GlobalStateManager {
 		return this.globalStateManager
 	}
 
-	getApiManager() {
+	getApiManager(): ApiManager {
 		return this.apiManager
 	}
 
-	getContext() {
+	getContext(): vscode.ExtensionContext {
 		return this.context
 	}
 
-	getOutputChannel() {
+	getOutputChannel(): vscode.OutputChannel {
 		return this.outputChannel
 	}
 }

@@ -1,21 +1,17 @@
 import { readdir } from "fs/promises"
 import path from "path"
 import * as vscode from "vscode"
-import { promises as fs } from "fs"
 import { extensionName } from "../../shared/constants"
-import { GitHandler } from "../../agent/v1/handlers/git-handler"
+import { WebviewMessage } from "../../shared/messages/client-message"
 import {
 	BaseExtensionState,
 	ClaudeMessage,
-	ExtensionMessage,
-	ExtensionState,
+	ExtensionMessage
 } from "../../shared/messages/extension-message"
-import { WebviewMessage, ActionMessage } from "../../shared/messages/client-message"
 import { getNonce, getUri } from "../../utils"
 import { AmplitudeWebviewManager } from "../../utils/amplitude/manager"
 import { ExtensionProvider } from "../extension-provider"
 import { GlobalStateManager } from "../state/global-state-manager"
-import { PromptStateManager } from "../state/prompt-state-manager"
 import { PromptManager } from "./prompt-manager"
 
 /**
@@ -175,6 +171,9 @@ export class WebviewManager {
 		const extensionName = this.provider.getContext().extension?.packageJSON?.name
 		const { claudeMessages, ...rest } = state
 
+		// Get MCP servers data
+		const mcpServers = await this.provider.getStateManager().getMcpServers()
+
 		return {
 			...rest,
 			version: this.provider.getContext().extension?.packageJSON?.version ?? "",
@@ -183,6 +182,7 @@ export class WebviewManager {
 			extensionName,
 			taskHistory: (state.taskHistory || []).filter((item) => item.ts && item.task).sort((a, b) => b.ts - a.ts),
 			shouldShowAnnouncement: false,
+			mcpServers,
 		} satisfies BaseExtensionState
 	}
 
@@ -509,6 +509,22 @@ export class WebviewManager {
 						break
 					case "debug":
 						await this.handleDebugInstruction()
+						break
+					case "openMcpSettings":
+						await this.postMessageToWebview({ type: "action", action: "mcpButtonClicked" })
+						break
+					case "openMcpConfigFile":
+						try {
+							const mcpHub = this.provider.getMcpHub()
+							if (mcpHub) {
+								const settingsPath = await mcpHub.getMcpSettingsFilePath()
+								const uri = vscode.Uri.file(settingsPath)
+								const doc = await vscode.workspace.openTextDocument(uri)
+								await vscode.window.showTextDocument(doc, { preview: false })
+							}
+						} catch (error) {
+							vscode.window.showErrorMessage(`Failed to open MCP config file: ${error}`)
+						}
 						break
 				}
 			},

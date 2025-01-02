@@ -165,7 +165,7 @@ export type PromptActions =
 
 export type ActionMessage = {
 	type: "action"
-	action: "didBecomeVisible" | "koduAuthenticated" | "koduCreditsFetched"
+	action: "didBecomeVisible" | "koduAuthenticated" | "koduCreditsFetched" | "mcpButtonClicked"
 	text?: string
 	state?: BaseExtensionState
 }
@@ -244,6 +244,8 @@ export type WebviewMessage =
 				| "fetchKoduCredits"
 				| "resetState"
 				| "fileTree"
+				| "openMcpSettings"
+				| "openMcpConfigFile"
 			text?: string
 			askResponse?: ClaudeAskResponse
 			images?: string[]

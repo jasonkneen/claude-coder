@@ -1,6 +1,7 @@
 import { SpawnAgentOptions } from "../../agent/v1/tools/schema/agents/agent-spawner"
 import { ToolName } from "../../agent/v1/tools/types"
 import type { GlobalState } from "../../providers/state/global-state-manager"
+import { McpServer } from "../../shared/mcp"
 import { ApiConfiguration } from "../api"
 import { HistoryItem } from "../history-item"
 import { ChatTool } from "../new-tools"
@@ -98,6 +99,7 @@ export type BaseExtensionMessage = {
 		| "didBecomeVisible"
 		| "koduAuthenticated"
 		| "koduCreditsFetched"
+		| "mcpButtonClicked"
 
 	state?: BaseExtensionState
 	images?: string[]
@@ -150,6 +152,19 @@ type PromptActionMessage =
 	| SetActivePromptMessage
 	| DeletePromptTemplateMessage
 
+type McpServersMessage = {
+	type: "mcpServers"
+	mcpServers: McpServer[]
+}
+
+type OpenMcpSettingsMessage = {
+	type: "openMcpSettings"
+}
+
+type OpenMcpConfigFileMessage = {
+	type: "openMcpConfigFile"
+}
+
 export type ExtensionMessage =
 	| DisabledToolsMessage
 	| PromptActionMessage
@@ -168,6 +183,9 @@ export type ExtensionMessage =
 	| HideCommandBlockMessage
 	| RequestStatus
 	| PostClaudeMessage
+	| McpServersMessage
+	| OpenMcpSettingsMessage
+	| OpenMcpConfigFileMessage
 
 export interface BaseExtensionState {
 	version: string
@@ -194,6 +212,7 @@ export interface BaseExtensionState {
 	taskHistory: HistoryItem[]
 	shouldShowAnnouncement: boolean
 	autoCloseTerminal: boolean
+	mcpServers?: McpServer[]
 }
 
 export interface ExtensionState extends BaseExtensionState {

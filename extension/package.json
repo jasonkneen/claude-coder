@@ -58,7 +58,15 @@
 		"codegpt"
 	],
 	"activationEvents": [
-		"onUri"
+		"onUri",
+		"onCommand:kodu-claude-coder-main.mcpButtonClicked",
+		"onCommand:kodu-claude-coder-main.setApiKey",
+		"onCommand:kodu-claude-coder-main.plusButtonTapped",
+		"onCommand:kodu-claude-coder-main.historyButtonTapped",
+		"onCommand:kodu-claude-coder-main.popoutButtonTapped",
+		"onCommand:kodu-claude-coder-main.settingsButtonTapped",
+		"onCommand:kodu-claude-coder-main.openInNewTab",
+		"onCommand:kodu-claude-coder-main.restartMcpServer"
 	],
 	"handlers": {
 		"onUri": {
@@ -119,6 +127,15 @@
 				"command": "kodu-claude-coder-main.openInNewTab",
 				"title": "Open In New Tab",
 				"category": "Kodu"
+			},
+			{
+				"command": "kodu-claude-coder-main.mcpButtonClicked",
+				"title": "Open MCP Settings",
+				"icon": "$(server)"
+			},
+			{
+				"command": "kodu-claude-coder-main.restartMcpServer",
+				"title": "Restart MCP Server"
 			}
 		],
 		"menus": {
@@ -129,18 +146,23 @@
 					"when": "view == kodu-claude-coder-main.SidebarProvider"
 				},
 				{
-					"command": "kodu-claude-coder-main.historyButtonTapped",
+					"command": "kodu-claude-coder-main.mcpButtonClicked",
 					"group": "navigation@2",
 					"when": "view == kodu-claude-coder-main.SidebarProvider"
 				},
 				{
-					"command": "kodu-claude-coder-main.popoutButtonTapped",
+					"command": "kodu-claude-coder-main.historyButtonTapped",
 					"group": "navigation@3",
 					"when": "view == kodu-claude-coder-main.SidebarProvider"
 				},
 				{
-					"command": "kodu-claude-coder-main.settingsButtonTapped",
+					"command": "kodu-claude-coder-main.popoutButtonTapped",
 					"group": "navigation@4",
+					"when": "view == kodu-claude-coder-main.SidebarProvider"
+				},
+				{
+					"command": "kodu-claude-coder-main.settingsButtonTapped",
+					"group": "navigation@5",
 					"when": "view == kodu-claude-coder-main.SidebarProvider"
 				}
 			]
@@ -148,14 +170,12 @@
 	},
 	"scripts": {
 		"vscode:prepublish": "pnpm run package",
-		"compile": "pnpm run check-types && pnpm run lint && tsx esbuild.ts",
-		"watch": "pnpm run-all -p watch:*",
-		"watch:esbuild": "tsx esbuild.ts --watch",
+		"copy-assets": "mkdir -p dist && cp -r node_modules/web-tree-sitter/tree-sitter.wasm dist/ && cp -r node_modules/tree-sitter-wasms/out/*.wasm dist/ && mkdir -p dist/codicons && cp -r node_modules/@vscode/codicons/dist/codicon.css dist/codicons/ && cp -r node_modules/@vscode/codicons/dist/codicon.ttf dist/codicons/",
+		"compile": "pnpm run copy-assets && pnpm run check-types && pnpm run lint && esbuild src/extension.ts src/**/*.worker.ts --bundle --platform=node --outdir=dist --format=cjs --external:vscode",
 		"install:all": "pnpm install && cd webview-ui-vite && pnpm install",
 		"install:clean": "pnpm run clean && pnpm run install:all",
 		"clean": "rm -rf out && rm -rf dist && rm -rf node_modules && rm -rf webview-ui-vite/dist && rm -rf webview-ui-vite/node_modules",
-		"watch:tsc": "tsc --noEmit --watch --project tsconfig.json",
-		"package": "pnpm run build:webview && pnpm run check-types && pnpm run lint && tsx esbuild.ts --production",
+		"package": "pnpm run build:webview && pnpm run check-types && pnpm run lint && pnpm run copy-assets && esbuild src/extension.ts src/**/*.worker.ts --bundle --platform=node --outdir=dist --format=cjs --external:vscode --minify",
 		"pretest": "pnpm run lint",
 		"check-types": "tsc --noEmit",
 		"build": "pnpm vsce package --no-dependencies",
@@ -163,7 +183,7 @@
 		"publish:pre-release": "pnpm vsce publish --pre-release --no-dependencies",
 		"lint": "eslint src",
 		"test": "vscode-test",
-		"dev": "tsx esbuild.ts --watch",
+		"dev": "pnpm run copy-assets && esbuild src/extension.ts src/**/*.worker.ts --bundle --platform=node --outdir=dist --format=cjs --external:vscode",
 		"start:webview": "cd webview-ui-vite && pnpm run dev",
 		"build:webview": "cd webview-ui-vite && pnpm run build",
 		"test:webview": "cd webview-ui-vite && pnpm run test"
@@ -184,7 +204,7 @@
 		"@vscode/test-cli": "^0.0.10",
 		"@vscode/test-electron": "^2.4.1",
 		"@vscode/vsce": "^3.2.1",
-		"esbuild": "^0.24.0",
+		"esbuild": "^0.24.2",
 		"eslint": "^9.15.0",
 		"typescript": "^5.7.2"
 	},
