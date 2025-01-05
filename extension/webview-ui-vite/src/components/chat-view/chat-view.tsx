@@ -1,25 +1,30 @@
 import React, { useCallback, useEffect, useMemo, useState, useTransition } from "react"
 import { ChatState, ChatViewProps } from "./chat"
-import { useAtom } from "jotai"
-import { attachmentsAtom, chatState, syntaxHighlighterAtom } from "./atoms"
-import { useExtensionState } from "@/context/extension-state-context"
+import { useAtom, useSetAtom } from "jotai"
+import { attachmentsAtom, chatState, selectedImagesAtom, syntaxHighlighterAtom } from "./atoms"
+import { useExtensionState } from "@/context/ExtensionStateContext"
 import { useChatMessageHandling } from "@/hooks/use-message-handler"
 import { useImageHandling } from "@/hooks/use-image-handler"
 import { useMessageRunning } from "@/hooks/use-message-running"
 import { useSelectImages } from "@/hooks/use-select-images"
-import { getSyntaxHighlighterStyleFromTheme } from "@/utils/get-syntax-highlighter-style-from-theme"
+import { combineApiRequests } from "../../../../src/shared/combineApiRequests"
+import { combineCommandSequences, COMMAND_STDIN_STRING } from "../../../../src/shared/combineCommandSequences"
+import { getApiMetrics } from "../../../../src/shared/getApiMetrics"
+import { getSyntaxHighlighterStyleFromTheme } from "@/utils/getSyntaxHighlighterStyleFromTheme"
 import { vscode } from "@/utils/vscode"
 import { ChatInput } from "./chat-input"
-import ButtonSection from "./button-section"
-import ChatScreen from "./chat-screen"
-import HistoryPreview from "../history-preview/history-preview"
-import ChatMessages from "./chat-messages"
+import ButtonSection from "../ChatView/ButtonSection"
+import ChatScreen from "../ChatView/chat-screen"
+import HistoryPreview from "../HistoryPreview/HistoryPreview"
+import KoduPromo from "../KoduPromo/KoduPromo"
+import ChatMessages from "../ChatView/ChatMessages"
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism"
 import { useOutOfCreditDialog } from "../dialogs/out-of-credit-dialog"
-import TaskHeader from "../task-header/task-header"
+import TaskHeader from "../TaskHeader/TaskHeader"
 import { Button } from "../ui/button"
 import { AlertCircle } from "lucide-react"
-import AnnouncementBanner from "../announcement-banner"
+import AnnouncementBanner from "../ announcement-banner"
+import DeprecationBanner from "../ announcement-banner/deprecation-banner"
 
 const ChatView: React.FC<ChatViewProps> = ({
 	isHidden,
@@ -44,7 +49,7 @@ const ChatView: React.FC<ChatViewProps> = ({
 	const [attachments, setAttachments] = useAtom(attachmentsAtom)
 	const [syntaxHighlighterStyle, setSyntaxHighlighterStyle] = useAtom(syntaxHighlighterAtom)
 
-	const { claudeMessages: messages, themeName: vscodeThemeName, uriScheme, user, currentTask } = useExtensionState()
+	const { claudeMessages: messages, themeName: vscodeThemeName, uriScheme, user } = useExtensionState()
 
 	const [isPending, startTransition] = useTransition()
 
@@ -103,14 +108,12 @@ const ChatView: React.FC<ChatViewProps> = ({
 
 	const { shouldDisableImages, handlePaste } = useImageHandling(selectedModelSupportsImages, state, updateState)
 
-	const firstTaskMsg = useMemo(() => messages.at(0), [messages])
-
-	const cleanedMessages = useMemo(() => messages.slice(1), [messages])
-
 	const isMessageRunning = useMessageRunning(messages)
 
+	const task = useMemo(() => (messages.length > 0 ? messages[0] : undefined), [messages])
+
 	useEffect(() => {
-		if (!currentTask?.ts) {
+		if (!task?.ts) {
 			updateState({
 				inputValue: "",
 				textAreaDisabled: false,
@@ -121,12 +124,15 @@ const ChatView: React.FC<ChatViewProps> = ({
 				secondaryButtonText: undefined,
 			})
 		}
-	}, [currentTask?.ts])
+	}, [task?.ts])
 
-	useChatMessageHandling(cleanedMessages, handleButtonStateUpdate, setAttachments)
+	const modifiedMessages = useMemo(() => combineApiRequests(combineCommandSequences(messages.slice(1))), [messages])
+	useChatMessageHandling(messages, handleButtonStateUpdate, setAttachments)
+
+	const apiMetrics = useMemo(() => getApiMetrics(modifiedMessages), [modifiedMessages])
 
 	const visibleMessages = useMemo(() => {
-		return cleanedMessages.filter((message) => {
+		return modifiedMessages.filter((message) => {
 			if (message.say === "shell_integration_warning") {
 				return true
 			}
@@ -151,7 +157,7 @@ const ChatView: React.FC<ChatViewProps> = ({
 			}
 			return true
 		})
-	}, [cleanedMessages])
+	}, [modifiedMessages])
 
 	useEffect(() => {
 		const hasMaxContext = visibleMessages.some(
@@ -182,7 +188,7 @@ const ChatView: React.FC<ChatViewProps> = ({
 			}
 
 			if (text || state.selectedImages.length > 0) {
-				if (!currentTask) {
+				if (messages.length === 0) {
 					vscode.postMessage({
 						type: "newTask",
 						text,
@@ -300,26 +306,27 @@ const ChatView: React.FC<ChatViewProps> = ({
 					flexDirection: "column",
 					overflowY: "auto",
 				}}>
+				{/* <DeprecationBanner /> */}
 				<AnnouncementBanner />
-				{!!currentTask && firstTaskMsg ? (
+				{task ? (
 					<>
 						<TaskHeader
-							key={`header-${firstTaskMsg.ts}`}
-							firstMsg={firstTaskMsg}
-							tokensIn={currentTask.tokensIn}
-							tokensOut={currentTask.tokensOut}
+							key={`header-${task.ts}`}
+							task={task}
+							tokensIn={apiMetrics.totalTokensIn}
+							tokensOut={apiMetrics.totalTokensOut}
 							doesModelSupportPromptCache={selectedModelSupportsPromptCache}
-							cacheWrites={currentTask.cacheWrites}
-							cacheReads={currentTask.cacheReads}
-							totalCost={currentTask.totalCost}
+							cacheWrites={apiMetrics.totalCacheWrites}
+							cacheReads={apiMetrics.totalCacheReads}
+							totalCost={apiMetrics.totalCost}
 							onClose={() => vscode.postMessage({ type: "clearTask" })}
 							isHidden={isHidden}
 							koduCredits={user?.credits ?? 0}
 							vscodeUriScheme={uriScheme}
 						/>
 						<ChatMessages
-							key={`messages-${firstTaskMsg.ts}`}
-							taskId={firstTaskMsg.ts}
+							key={`messages-${task.ts}`}
+							taskId={task.ts}
 							visibleMessages={visibleMessages}
 							syntaxHighlighterStyle={syntaxHighlighterStyle}
 						/>
@@ -335,16 +342,14 @@ const ChatView: React.FC<ChatViewProps> = ({
 			</div>
 			{!isMaxContextReached && (
 				<div className="mb-0 mt-auto">
-					{!!currentTask && (
-						<ButtonSection
-							primaryButtonText={state.primaryButtonText}
-							secondaryButtonText={state.secondaryButtonText}
-							enableButtons={state.enableButtons}
-							isRequestRunning={isMessageRunning}
-							handlePrimaryButtonClick={handlePrimaryButtonClick}
-							handleSecondaryButtonClick={handleSecondaryButtonClick}
-						/>
-					)}
+					<ButtonSection
+						primaryButtonText={state.primaryButtonText}
+						secondaryButtonText={state.secondaryButtonText}
+						enableButtons={state.enableButtons}
+						isRequestRunning={isMessageRunning}
+						handlePrimaryButtonClick={handlePrimaryButtonClick}
+						handleSecondaryButtonClick={handleSecondaryButtonClick}
+					/>
 
 					<ChatInput
 						state={state}
@@ -353,7 +358,7 @@ const ChatView: React.FC<ChatViewProps> = ({
 						shouldDisableImages={shouldDisableImages}
 						handlePaste={handlePaste}
 						isRequestRunning={isMessageRunning}
-						isInTask={!!currentTask}
+						isInTask={!!task}
 						isHidden={isHidden}
 					/>
 				</div>
