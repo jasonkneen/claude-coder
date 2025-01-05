@@ -34,24 +34,29 @@ export class AskManager {
 	private currentAskId: number | null = null
 	private pendingToolAsks: Map<string, number> = new Map()
 
-	private readonly readOnlyTools = [
+	private readonly readOnlyTools: ChatTool["tool"][] = [
 		"read_file",
 		"list_files",
 		"search_files",
 		"explore_repo_folder",
 		"web_search",
 		"url_screenshot",
+		"add_interested_file",
 	] as const
 
-	private readonly mustRequestApprovalTypes = [
+	private readonly mustRequestApprovalTypes: (ChatTool["tool"] | string)[] = [
 		"completion_result",
 		"resume_completed_task",
 		"resume_task",
 		"request_limit_reached",
 		"followup",
+		"ask_followup_question",
 	] as const
 
-	private readonly mustRequestApprovalTools = ["ask_followup_question", "attempt_completion"] as const
+	private readonly mustRequestApprovalTools: ChatTool["tool"][] = [
+		"ask_followup_question",
+		"attempt_completion",
+	] as const
 
 	constructor(stateManager: StateManager) {
 		this.stateManager = stateManager
@@ -66,7 +71,7 @@ export class AskManager {
 			const askData = this.stateManager.claudeMessagesManager.getMessageById(this.currentAskId!)
 			if (askData) {
 				try {
-					const tool = (askData.ask === "tool" ? safeParseJSON(askData.text ?? "{}") : undefined) as ChatTool
+					const tool = (askData?.ask === "tool" ? safeParseJSON(askData.text ?? "{}") : undefined) as ChatTool
 					if (typeof tool === "object") {
 						tool.approvalState = "error"
 						tool.error = "Tool was aborted"

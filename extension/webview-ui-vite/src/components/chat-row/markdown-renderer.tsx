@@ -7,17 +7,25 @@ import { Prism as SyntaxHighlighter } from "react-syntax-highlighter"
 import { vscDarkPlus } from "react-syntax-highlighter/dist/cjs/styles/prism"
 import { useAtomValue } from "jotai"
 import { syntaxHighlighterAtom } from "../chat-view/atoms"
+import { syntaxHighlighterCustomStyle } from "../code-block/utils"
+import { CodeBlock } from "./code-block"
 
 // Example interface, you can customize as needed
-interface MarkdownRendererProps {
-	markdown: string
-}
+type MarkdownRendererProps =
+	| {
+			markdown: string
+			children?: string
+	  }
+	| {
+			markdown?: string
+			children: string
+	  }
 
-export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ markdown }) => {
+export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ markdown, children }) => {
 	const syntaxHighlighter = useAtomValue(syntaxHighlighterAtom)
 	return (
-		<div className="mr-auto p-4 py-0">
-			<div className="prose prose-sm sm:prose-base lg:prose-lg dark:prose-invert max-w-none">
+		<div className="mr-auto p-4 py-0 overflow-hidden">
+			<div className="prose prose-sm sm:prose-base lg:prose-lg dark:prose-invert max-w-none w-full">
 				<ReactMarkdown
 					// GFM adds support for tables, strikethrough, and task lists
 					remarkPlugins={[remarkGfm]}
@@ -27,24 +35,15 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ markdown }) 
 						// Customize code blocks
 						code: ({ node, className, children, ...props }) => {
 							const match = /language-(\w+)/.exec(className || "")
+
 							if (match) {
 								// This is a fenced code block with a language
-								return (
-									<SyntaxHighlighter
-										language={match[1]}
-										style={syntaxHighlighter}
-										PreTag="div"
-										CodeTag="code"
-										// Tailwind classes for spacing, background, rounding
-										className="my-4 overflow-auto rounded-lg bg-gray-900 p-4 font-mono text-sm"
-										showLineNumbers={false}>
-										{String(children).replace(/\n$/, "")}
-									</SyntaxHighlighter>
-								)
+								return <CodeBlock language={match[1]}>{children}</CodeBlock>
 							} else {
+								console.log(`No language specified for code block: ${children}`)
 								// Inline code block
 								return (
-									<code className="rounded bg-gray-100 dark:bg-gray-800 px-1 py-0.5 font-mono text-sm">
+									<code className="rounded bg-gray-100 dark:bg-gray-800 px-1 py-0.5 font-mono text-sm overflow-auto">
 										{children}
 									</code>
 								)
@@ -66,7 +65,7 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ markdown }) 
 						),
 						// You can override other elements as needed, but `prose` handles most gracefully.
 					}}>
-					{markdown}
+					{markdown ?? children}
 				</ReactMarkdown>
 			</div>
 		</div>

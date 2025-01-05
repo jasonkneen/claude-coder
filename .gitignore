@@ -11,3 +11,5 @@ eval/env
 .DS_Store
 extension/webview-ui-vite/build
 extension/webview-ui-vite/tsconfig.app.tsbuildinfo
+
+.codegpt

@@ -1,14 +1,16 @@
-import React, { useEffect, useRef } from "react"
+import { atom, useAtom, useSetAtom } from "jotai"
+import React, { useEffect } from "react"
 import { useEvent } from "react-use"
-import { atom, useAtom, useAtomValue, useSetAtom } from "jotai"
-import { ClaudeMessage, ExtensionMessage } from "../../../src/shared/messages/extension-message"
-import { vscode } from "../utils/vscode"
 import { ApiConfiguration } from "../../../src/api/index"
-import { HistoryItem } from "../../../src/shared/history-item"
 import type { GlobalState } from "../../../src/providers/state/global-state-manager"
-import { useState } from "react"
+import { HistoryItem } from "../../../src/shared/history-item"
+import { ClaudeMessage, ExtensionMessage } from "../../../src/shared/messages/extension-message"
+import { McpServer } from "../types/mcp"
+import { vscode } from "../utils/vscode"
 
 // Define atoms for each piece of state
+const mcpServersAtom = atom<McpServer[]>([])
+mcpServersAtom.debugLabel = "mcpServers"
 
 const commandTimeoutAtom = atom<number | undefined>(undefined)
 commandTimeoutAtom.debugLabel = "commandTimeout"
@@ -58,6 +60,7 @@ observerHookEveryAtom.debugLabel = "observerHookEvery"
 
 // Derived atom for the entire state
 export const extensionStateAtom = atom((get) => ({
+	mcpServers: get(mcpServersAtom),
 	version: get(versionAtom),
 	gitHandlerEnabled: get(gitHandlerEnabledAtom),
 	commandTimeout: get(commandTimeoutAtom),
@@ -125,7 +128,6 @@ const useHandleClaudeMessages = () => {
 		}
 
 		if (message.type === "claudeMessage") {
-			console.log(`Received claudeMessage at ${Date.now()} with message:`, message.claudeMessage?.text)
 			// find the message in the current state and update it if not found add it
 			setClaudeMessages((currentMessages) => {
 				if (!message.claudeMessage || !message.taskId) {
@@ -150,6 +152,7 @@ export const ExtensionStateProvider: React.FC<{ children: React.ReactNode }> = (
 	useHandleClaudeMessages()
 	const setVersion = useSetAtom(versionAtom)
 	const setClaudeMessages = useSetAtom(claudeMessagesAtom)
+	const setMcpServers = useSetAtom(mcpServersAtom)
 	const setCommandTimeout = useSetAtom(commandTimeoutAtom)
 	const setTaskHistory = useSetAtom(taskHistoryAtom)
 	const setGitHandlerEnabled = useSetAtom(gitHandlerEnabledAtom)
@@ -178,7 +181,9 @@ export const ExtensionStateProvider: React.FC<{ children: React.ReactNode }> = (
 	const handleMessage = (event: MessageEvent) => {
 		const message: ExtensionMessage = event.data
 
-		if (message.type === "state" && message.state) {
+		if (message.type === "mcpServers") {
+			setMcpServers(message.mcpServers || [])
+		} else if (message.type === "state" && message.state) {
 			setVersion(message.state.version)
 			setCurrentIdTask(message.state.currentTaskId)
 			if (!message.state.currentTaskId) {
@@ -232,6 +237,7 @@ export const ExtensionStateProvider: React.FC<{ children: React.ReactNode }> = (
 export const useExtensionState = () => {
 	const [state] = useAtom(extensionStateAtom)
 	const setApiConfiguration = useSetAtom(apiConfigurationAtom)
+	const setMcpServers = useSetAtom(mcpServersAtom)
 	const setCustomInstructions = useSetAtom(customInstructionsAtom)
 	const setLastShownAnnouncementId = useSetAtom(lastShownAnnouncementIdAtom)
 	const setTerminalCompressionThreshold = useSetAtom(terminalCompressionThresholdAtom)
@@ -249,6 +255,7 @@ export const useExtensionState = () => {
 	return {
 		...state,
 		setApiConfiguration,
+		setMcpServers,
 		setLastShownAnnouncementId,
 		setTerminalCompressionThreshold,
 		setObserverHookEvery,

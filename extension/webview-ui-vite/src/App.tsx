@@ -1,20 +1,22 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import { useAtom } from "jotai"
 import { useCallback, useMemo, useState } from "react"
 import { useEvent } from "react-use"
 import { ExtensionMessage } from "../../src/shared/messages/extension-message"
-import {
-	ExtensionStateProvider,
-	showSettingsAtom,
-	showPromptEditorAtom,
-	useExtensionState,
-} from "./context/extension-state-context"
-import { normalizeApiConfiguration } from "./components/settings-view/utils"
 import ChatView from "./components/chat-view/chat-view"
-import HistoryView from "./components/history-view/history-view"
-import { TooltipProvider } from "./components/ui/tooltip"
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import OutOfCreditDialog from "./components/dialogs/out-of-credit-dialog"
+import HistoryView from "./components/history-view/history-view"
+import McpView from "./components/mcp/McpView"
 import SettingsPage from "./components/settings-view/settings-tabs"
-import { useAtom } from "jotai"
+import { normalizeApiConfiguration } from "./components/settings-view/utils"
+import { TooltipProvider } from "./components/ui/tooltip"
+import {
+    ExtensionStateProvider,
+    showPromptEditorAtom,
+    showSettingsAtom,
+    useExtensionState,
+} from "./context/extension-state-context"
+
 const queryClient = new QueryClient()
 
 const AppContent = () => {
@@ -22,6 +24,7 @@ const AppContent = () => {
 	const [showSettings, setShowSettings] = useAtom(showSettingsAtom)
 	const [showHistory, setShowHistory] = useState(false)
 	const [showPromptEditor, setShowPromptEditor] = useAtom(showPromptEditorAtom)
+	const [showMcp, setShowMcp] = useState(false)
 
 	const handleMessage = useCallback((e: MessageEvent) => {
 		const message: ExtensionMessage = e.data
@@ -32,23 +35,33 @@ const AppContent = () => {
 			}
 			case "action":
 				switch (message.action!) {
-					case "settingsButtonTapped":
+					case "mcpButtonClicked":
+						setShowSettings(false)
+						setShowHistory(false)
+						setShowPromptEditor(false)
+						setShowMcp(true)
+						break
+					case "settingsButtonTapped":						
 						setShowSettings(true)
 						setShowHistory(false)
+						setShowMcp(false)
 						break
 					case "historyButtonTapped":
 						setShowSettings(false)
 						setShowHistory(true)
+						setShowMcp(false)
 						break
 					case "chatButtonTapped":
 						setShowSettings(false)
 						setShowHistory(false)
 						setShowPromptEditor(false)
+						setShowMcp(false)
 						break
 					case "promptEditorButtonTapped":
 						setShowSettings(false)
 						setShowHistory(false)
 						setShowPromptEditor(true)
+						setShowMcp(false)
 						break
 				}
 				break
@@ -62,18 +75,21 @@ const AppContent = () => {
 		return normalizeApiConfiguration(apiConfiguration)
 	}, [apiConfiguration])
 
+	const handleMcpClick = useCallback(() => {
+		setShowMcp(true)
+	}, [])
+
 	return (
 		<>
 			{showSettings && <SettingsPage />}
-			{/* {showSettings && <SettingsView onDone={() => setShowSettings(false)} />} */}
 			{showHistory && <HistoryView onDone={() => setShowHistory(false)} />}
-			{/* Do not conditionally load ChatView, it's expensive and there's state we don't want to lose (user input, disableInput, askResponse promise, etc.) */}
+			{showMcp && <McpView onDone={() => setShowMcp(false)} />}
 			<ChatView
 				showHistoryView={() => {
 					setShowSettings(false)
 					setShowHistory(true)
 				}}
-				isHidden={showSettings || showHistory || showPromptEditor}
+				isHidden={showSettings || showHistory || showMcp}
 				selectedModelSupportsImages={selectedModelInfo.supportsImages}
 				selectedModelSupportsPromptCache={selectedModelInfo.supportsPromptCache}
 			/>

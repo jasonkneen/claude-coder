@@ -1,9 +1,9 @@
-import { GlobalStateManager } from "./global-state-manager"
-import { HistoryItem, isSatifiesHistoryItem } from "../../shared/history-item"
-import { SecretStateManager } from "./secret-state-manager"
 import { fetchKoduUser as fetchKoduUserAPI } from "../../api/providers/kodu"
-import { ExtensionProvider } from "../extension-provider"
+import { HistoryItem, isSatifiesHistoryItem } from "../../shared/history-item"
 import { ExtensionState, isV1ClaudeMessage, V1ClaudeMessage } from "../../shared/messages/extension-message"
+import { ExtensionProvider } from "../extension-provider"
+import { GlobalStateManager } from "./global-state-manager"
+import { SecretStateManager } from "./secret-state-manager"
 
 /**
  * this at the current form can't be a singleton because it has dependicies on the KoduDev instance, and one extension can have multiple KoduDev instances
@@ -183,5 +183,10 @@ export class ExtensionStateManager {
 
 	setAlwaysAllowWriteOnly(value: boolean) {
 		return this.globalStateManager.updateGlobalState("alwaysAllowWriteOnly", value)
+	}
+
+	async getMcpServers() {
+		const mcpSettings = await this.globalStateManager.getGlobalState("mcpServers")
+		return mcpSettings || []
 	}
 }

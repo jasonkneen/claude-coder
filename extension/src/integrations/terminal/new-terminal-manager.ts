@@ -122,7 +122,6 @@ export class NewTerminalManager {
 		try {
 			await this.waitForShellIntegration(terminal)
 		} catch (error) {
-			// @ts-expect-error
 			console.warn(`Shell integration not available: ${error.message}`)
 		}
 
@@ -343,7 +342,6 @@ export class DevTerminalManager {
 			}
 		} catch (error) {
 			this.devServers.get(name)!.status = "error"
-			// @ts-expect-error
 			this.devServers.get(name)!.error = error.message
 			throw error
 		}

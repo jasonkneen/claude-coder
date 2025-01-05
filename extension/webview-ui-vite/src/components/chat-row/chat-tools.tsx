@@ -1,20 +1,20 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
-import { vscode } from "@/utils/vscode"
 import {
 	AlertCircle,
+	Bot,
 	CheckCircle,
 	ChevronDown,
 	ChevronUp,
+	ClipboardCheck,
 	Code,
-	Copy,
-	Edit,
 	FileText,
 	FolderTree,
 	HelpCircle,
 	Image,
 	LoaderPinwheel,
+	LogOut,
 	MessageCircle,
 	MessageCircleReply,
 	Play,
@@ -24,35 +24,39 @@ import {
 	Server,
 	Square,
 	Terminal,
-	XCircle
+	XCircle,
 } from "lucide-react"
-import { Highlight, themes } from 'prism-react-renderer'
-import React, { memo, useEffect, useRef, useState } from "react"
+import React, { useMemo, useState } from "react"
 import {
-	AskConsultantTool,
+	AddInterestedFileTool,
 	AskFollowupQuestionTool,
 	AttemptCompletionTool,
 	ChatTool,
 	ExecuteCommandTool,
-	ListCodeDefinitionNamesTool,
+	ExploreRepoFolderTool,
+	FileChangePlanTool,
 	ListFilesTool,
 	ReadFileTool,
 	SearchFilesTool,
+	SearchSymbolsTool,
 	ServerRunnerTool,
 	UrlScreenshotTool,
-	WriteToFileTool,
+	SubmitReviewTool,
 } from "../../../../src/shared/new-tools"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "../ui/collapsible"
 import { ScrollArea, ScrollBar } from "../ui/scroll-area"
 import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip"
-import { EnhancedWebSearchBlock } from "./Tools/WebSearchTool"
+import { EnhancedWebSearchBlock } from "./tools/web-search-tool"
+import { FileEditorTool } from "./tools/file-editor-tool"
+import { SpawnAgentBlock, ExitAgentBlock } from "./tools/agent-tools"
+import MarkdownRenderer from "./markdown-renderer"
+import { CodeBlock } from "./code-block"
+import { getLanguageFromPath } from "@/utils/get-language-from-path"
 
 type ApprovalState = ToolStatus
 export type ToolAddons = {
 	approvalState?: ApprovalState
 	ts: number
-	onApprove?: () => void
-	onReject?: (feedback: string) => void
 	/**
 	 * If this is a sub message, it will force it to stick to previous tool call in the ui (same message)
 	 */
@@ -61,11 +65,10 @@ export type ToolAddons = {
 }
 type ToolBlockProps = {
 	icon: React.FC<React.SVGProps<SVGSVGElement>>
-	title: React.ReactNode
+	title: string
 	children: React.ReactNode
 	tool: ChatTool["tool"]
 	variant: "default" | "primary" | "info" | "accent" | "info" | "success" | "info" | "destructive"
-	actions?: React.ReactNode
 } & ToolAddons
 
 export const ToolBlock: React.FC<ToolBlockProps> = ({
@@ -76,16 +79,15 @@ export const ToolBlock: React.FC<ToolBlockProps> = ({
 	isSubMsg,
 	approvalState,
 	userFeedback,
-	actions,
 }) => {
 	variant =
 		approvalState === "loading"
 			? "info"
 			: approvalState === "error" || approvalState === "rejected"
-				? "destructive"
-				: approvalState === "approved"
-					? "success"
-					: variant
+			? "destructive"
+			: approvalState === "approved"
+			? "success"
+			: variant
 	const stateIcons = {
 		pending: <AlertCircle className="w-5 h-5 text-info" />,
 		approved: <CheckCircle className="w-5 h-5 text-success" />,
@@ -102,7 +104,7 @@ export const ToolBlock: React.FC<ToolBlockProps> = ({
 	return (
 		<div
 			className={cn(
-				"border-l-4 p-3 bg-card text-card-foreground",
+				"border-l-4 p-3 bg-card text-card-foreground rounded-sm",
 				{
 					"border-primary": variant === "primary",
 					"border-secondary": variant === "info",
@@ -114,20 +116,20 @@ export const ToolBlock: React.FC<ToolBlockProps> = ({
 				},
 				isSubMsg && "!-mt-5"
 			)}>
-			<div className="flex items-center mb-2">
-				<Icon className={cn("w-5 h-5 mr-2", `text-${variant}`)} />
-				<h3 className="text-sm font-semibold">{title}</h3>
-				<div className="flex items-center gap-2 ml-auto">
-					{actions}
-					{userFeedback ? (
-						<Tooltip>
-							<TooltipTrigger>{stateIcons["feedback"]}</TooltipTrigger>
-							<TooltipContent side="left">The tool got rejected with feedback</TooltipContent>
-						</Tooltip>
-					) : (
-						stateIcons[approvalState]
-					)}
+			<div className="flex items-center justify-between mb-2">
+				<div className="flex items-center">
+					<Icon className={cn("w-5 h-5 mr-2", `text-${variant}`)} />
+					<h3 className="text-sm font-semibold">{title}</h3>
 				</div>
+
+				{userFeedback ? (
+					<Tooltip>
+						<TooltipTrigger>{stateIcons["feedback"]}</TooltipTrigger>
+						<TooltipContent side="left">The tool got rejected with feedback</TooltipContent>
+					</Tooltip>
+				) : (
+					stateIcons[approvalState]
+				)}
 			</div>
 			<div className="text-sm">{children}</div>
 		</div>
@@ -138,8 +140,7 @@ export const DevServerToolBlock: React.FC<ServerRunnerTool & ToolAddons> = ({
 	commandType,
 	commandToRun,
 	approvalState,
-	onApprove,
-	onReject,
+
 	tool,
 	serverName,
 	ts,
@@ -174,9 +175,7 @@ export const DevServerToolBlock: React.FC<ServerRunnerTool & ToolAddons> = ({
 			// title={`Dev Server - ${commandType?.charAt(0)?.toUpperCase?.() + commandType?.slice?.(1)}`}
 			title={`Dev Server - ${serverName}`}
 			variant="primary"
-			approvalState={approvalState}
-			onApprove={onApprove}
-			onReject={onReject}>
+			approvalState={approvalState}>
 			<div className="bg-muted p-2 rounded font-mono text-xs overflow-x-auto">
 				<span className="text-success">$</span> {commandToRun}
 			</div>
@@ -306,10 +305,10 @@ export const ChatMaxWindowBlock = ({ ts }: { ts: number }) => (
 
 export const ExecuteCommandBlock: React.FC<
 	ExecuteCommandTool &
-	ToolAddons & {
-		hasNextMessage?: boolean
-	}
-> = ({ command, output, approvalState, onApprove, tool, ts, onReject, ...rest }) => {
+		ToolAddons & {
+			hasNextMessage?: boolean
+		}
+> = ({ command, output, approvalState, tool, ts, ...rest }) => {
 	const [isOpen, setIsOpen] = React.useState(false)
 
 	return (
@@ -320,22 +319,10 @@ export const ExecuteCommandBlock: React.FC<
 			icon={Terminal}
 			title="Execute Command"
 			variant="info"
-			approvalState={approvalState}
-			onApprove={onApprove}
-			onReject={onReject}>
+			approvalState={approvalState}>
 			<div className="bg-muted p-2 rounded font-mono text-xs overflow-x-auto">
 				<span className="text-success">$</span> {command}
 			</div>
-
-			{/* {approvalState === "loading" && earlyExit === "pending" && (
-				<>
-					<div className="flex justify-end space-x-1 mt-2">
-						<Button variant="outline" size="sm" onClick={onApprove}>
-							Continue while running
-						</Button>
-					</div>
-				</>
-			)} */}
 			{output && (
 				<Collapsible open={isOpen} onOpenChange={setIsOpen} className="mt-2">
 					<CollapsibleTrigger asChild>
@@ -362,8 +349,7 @@ export const ListFilesBlock: React.FC<ListFilesTool & ToolAddons> = ({
 	path,
 	recursive,
 	approvalState,
-	onApprove,
-	onReject,
+
 	tool,
 	ts,
 	...rest
@@ -375,9 +361,7 @@ export const ListFilesBlock: React.FC<ListFilesTool & ToolAddons> = ({
 		icon={FolderTree}
 		title="List Files"
 		variant="info"
-		approvalState={approvalState}
-		onApprove={onApprove}
-		onReject={onReject}>
+		approvalState={approvalState}>
 		<p className="text-xs">
 			<span className="font-semibold">Folder:</span> {path}
 		</p>
@@ -387,11 +371,9 @@ export const ListFilesBlock: React.FC<ListFilesTool & ToolAddons> = ({
 	</ToolBlock>
 )
 
-export const ListCodeDefinitionNamesBlock: React.FC<ListCodeDefinitionNamesTool & ToolAddons> = ({
+export const ExploreRepoFolderBlock: React.FC<ExploreRepoFolderTool & ToolAddons> = ({
 	path,
 	approvalState,
-	onApprove,
-	onReject,
 	tool,
 	ts,
 	...rest
@@ -401,11 +383,9 @@ export const ListCodeDefinitionNamesBlock: React.FC<ListCodeDefinitionNamesTool 
 		ts={ts}
 		tool={tool}
 		icon={Code}
-		title="List Code Definitions"
+		title="Explore Repository Folder"
 		variant="accent"
-		approvalState={approvalState}
-		onApprove={onApprove}
-		onReject={onReject}>
+		approvalState={approvalState}>
 		<p className="text-xs">
 			<span className="font-semibold">Scanning folder:</span> {path}
 		</p>
@@ -417,8 +397,7 @@ export const SearchFilesBlock: React.FC<SearchFilesTool & ToolAddons> = ({
 	regex,
 	filePattern,
 	approvalState,
-	onApprove,
-	onReject,
+
 	tool,
 	ts,
 	...rest
@@ -430,9 +409,7 @@ export const SearchFilesBlock: React.FC<SearchFilesTool & ToolAddons> = ({
 		icon={Search}
 		title="Search Files"
 		variant="info"
-		approvalState={approvalState}
-		onApprove={onApprove}
-		onReject={onReject}>
+		approvalState={approvalState}>
 		<p className="text-xs">
 			<span className="font-semibold">Search in:</span> {path}
 		</p>
@@ -447,17 +424,28 @@ export const SearchFilesBlock: React.FC<SearchFilesTool & ToolAddons> = ({
 	</ToolBlock>
 )
 
+const CodeBlockMemorized = React.memo(({ content, path }: { content: string; path: string }) => {
+	return (
+		<ScrollArea className="h-[200px] w-full rounded-md border">
+			<CodeBlock language={path} children={content} />
+			<ScrollBar orientation="vertical" />
+			<ScrollBar orientation="horizontal" />
+		</ScrollArea>
+	)
+})
+
 export const ReadFileBlock: React.FC<ReadFileTool & ToolAddons> = ({
 	path,
 	approvalState,
-	onApprove,
 	content,
-	onReject,
 	tool,
 	ts,
+	pageNumber,
+	readAllPages,
 	...rest
 }) => {
 	const [isOpen, setIsOpen] = React.useState(false)
+	const pathEnding = useMemo(() => getLanguageFromPath(path), [path])
 
 	return (
 		<ToolBlock
@@ -467,28 +455,32 @@ export const ReadFileBlock: React.FC<ReadFileTool & ToolAddons> = ({
 			icon={FileText}
 			title="Read File"
 			variant="primary"
-			approvalState={approvalState}
-			onApprove={onApprove}
-			onReject={onReject}>
+			approvalState={approvalState}>
 			<p className="text-xs">
 				<span className="font-semibold">File:</span> {path}
 			</p>
+			{typeof pageNumber === "number" && (
+				<p className="text-xs">
+					<span className="font-semibold">Page Number:</span> {pageNumber}
+				</p>
+			)}
+			{typeof readAllPages === "boolean" && (
+				<p className="text-xs">
+					<span className="font-semibold">Read All Pages:</span> {readAllPages ? "Yes" : "No"}
+				</p>
+			)}
+
 			{content && content.length > 0 && (
 				<Collapsible open={isOpen} onOpenChange={setIsOpen} className="mt-2">
 					<CollapsibleTrigger asChild>
 						<Button variant="ghost" size="sm" className="flex items-center w-full justify-between">
-							<span>View Output</span>
+							<span>View Content</span>
 							{isOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
 						</Button>
 					</CollapsibleTrigger>
 					<CollapsibleContent className="mt-2">
-						<ScrollArea className="h-[200px] w-full rounded-md border">
-							<div className="bg-secondary/20 p-3 rounded-md text-sm">
-								<pre className="whitespace-pre-wrap">{content}</pre>
-							</div>
-							<ScrollBar orientation="vertical" />
-							<ScrollBar orientation="horizontal" />
-						</ScrollArea>
+						{/* this optimize the render to not do heavy work unless it's open */}
+						{isOpen && <CodeBlockMemorized content={content} path={pathEnding ?? "text"} />}
 					</CollapsibleContent>
 				</Collapsible>
 			)}
@@ -498,145 +490,10 @@ export const ReadFileBlock: React.FC<ReadFileTool & ToolAddons> = ({
 
 export type ToolStatus = "pending" | "rejected" | "approved" | "error" | "loading" | undefined
 
-const CHUNK_SIZE = 50
-
-const textVariants = {
-	hidden: { opacity: 0, y: 20 },
-	visible: { opacity: 1, y: 0 },
-}
-
-export const WriteToFileBlock: React.FC<WriteToFileTool & ToolAddons> = memo(
-	({ path = '', content, approvalState, onApprove, onReject, tool, ts, ...rest }) => {
-		content = (content ?? "").replace(/\t/g, '  ')
-		const [displayContent, setDisplayContent] = useState(content)
-		const isStreaming = approvalState === "loading"
-		const prevContentRef = useRef(content)
-
-		useEffect(() => {
-			if (isStreaming && content !== prevContentRef.current) {
-				setDisplayContent(content)
-				prevContentRef.current = content
-			} else if (!isStreaming && content !== displayContent) {
-				setDisplayContent(content)
-			}
-		}, [content, isStreaming])
-
-		const fileExt = path?.split('.')?.pop()?.toLowerCase() || ''
-		const getLanguage = (fileExt: string) => {
-			switch (fileExt) {
-				case 'js':
-				case 'jsx':
-					return 'javascript'
-				case 'ts':
-				case 'tsx':
-					return 'typescript'
-				case 'py':
-					return 'python'
-				case 'html':
-					return 'html'
-				case 'css':
-					return 'css'
-				case 'json':
-					return 'json'
-				default:
-					return 'typescript'
-			}
-		}
-
-		const actions = <div className="flex gap-1 ml-auto">
-			<button
-				className="p-1 hover:bg-muted rounded-sm"
-				title="Copy"
-				onClick={() => navigator.clipboard.writeText(content)}>
-				<Copy className="h-3 w-3" />
-			</button>
-		</div>
-
-		const language = getLanguage(fileExt)
-
-		// Don't render anything if no content during streaming
-		if (isStreaming && !displayContent) {
-			return (
-				<ToolBlock
-					{...rest}
-					ts={ts}
-					tool={tool}
-					icon={Edit}
-					title={<div className="flex items-center w-full">
-						<span className="font-semibold">{path}</span>
-					</div>}
-					variant="info"
-					approvalState={approvalState}
-					onApprove={onApprove}
-					onReject={onReject}>
-					<div className="flex items-center justify-center">
-						<LoaderPinwheel className="w-3 h-3 animate-spin" />
-						<span className="ml-2 text-xs font-bold p-2">Streaming content...</span>
-					</div>
-				</ToolBlock>
-			)
-		}
-
-		return (
-			<ToolBlock
-				{...rest}
-				ts={ts}
-				tool={tool}
-				icon={Edit}
-				title={
-					<div className="flex items-center w-full">
-						<span className="font-semibold">{path}</span>
-					</div>
-				}
-				actions={actions}
-				variant={approvalState === "approved" ? "success" : "info"}
-				approvalState={approvalState}
-				onApprove={onApprove}
-				onReject={onReject}>
-				<div className="relative max-h-[300px] overflow-auto [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-thumb]:bg-muted-foreground/20 hover:[&::-webkit-scrollbar-thumb]:bg-muted-foreground/30">
-					<Highlight
-						theme={themes.vsDark}
-						code={displayContent || ''}
-						language={language}>
-						{({ className, style, tokens, getLineProps, getTokenProps }) => (
-							<pre 
-								className={`${className} text-xs p-4`} 
-								style={{
-									...style,
-									margin: 0,
-									width: 'fit-content',
-									minWidth: '100%'
-								}}>
-								{tokens.map((line, i) => (
-									<div key={i} {...getLineProps({ line })} style={{ display: 'table-row' }}>
-										<span style={{ display: 'table-cell' }}>
-											{line.map((token, key) => (
-												<span key={key} {...getTokenProps({ token })} />
-											))}
-										</span>
-									</div>
-								))}
-							</pre>
-						)}
-					</Highlight>
-				</div>
-			</ToolBlock>
-		)
-	},
-	(prevProps, nextProps) => {
-		return (
-			prevProps.approvalState === nextProps.approvalState &&
-			prevProps.content === nextProps.content &&
-			prevProps.ts === nextProps.ts &&
-			prevProps.path === nextProps.path
-		)
-	}
-)
 export const AskFollowupQuestionBlock: React.FC<AskFollowupQuestionTool & ToolAddons> = ({
 	question,
 	approvalState,
-	onApprove,
-	onReject,
+
 	tool,
 	ts,
 	...rest
@@ -648,18 +505,17 @@ export const AskFollowupQuestionBlock: React.FC<AskFollowupQuestionTool & ToolAd
 		icon={HelpCircle}
 		title="Follow-up Question"
 		variant="info"
-		approvalState={approvalState}
-		onApprove={onApprove}
-		onReject={onReject}>
-		<div className="bg-info/20 text-info-foreground p-2 rounded text-xs">{question}</div>
+		approvalState={approvalState}>
+		<div className="bg-info/20 text-info-foreground p-2 rounded text-xs">
+			<MarkdownRenderer>{question}</MarkdownRenderer>
+		</div>
 	</ToolBlock>
 )
 
 export const AttemptCompletionBlock: React.FC<AttemptCompletionTool & ToolAddons> = ({
 	result,
 	approvalState,
-	onApprove,
-	onReject,
+
 	tool,
 	ts,
 	...rest
@@ -671,16 +527,14 @@ export const AttemptCompletionBlock: React.FC<AttemptCompletionTool & ToolAddons
 		icon={CheckCircle}
 		title="Task Completion"
 		variant="success"
-		approvalState={approvalState}
-		onApprove={onApprove}
-		onReject={onReject}>
+		approvalState={approvalState}>
 		{/* {command && (
 			<div className="bg-muted p-2 rounded font-mono text-xs overflow-x-auto mb-2">
 				<span className="text-success">$</span> {command}
 			</div>
 		)} */}
 		<div className="bg-success/20 text-success-foreground p-2 rounded text-xs w-full flex">
-			<pre className="whitespace-pre text-wrap">{result?.trim()}</pre>
+			<MarkdownRenderer markdown={result?.trim()} />
 		</div>
 	</ToolBlock>
 )
@@ -688,8 +542,7 @@ export const AttemptCompletionBlock: React.FC<AttemptCompletionTool & ToolAddons
 export const UrlScreenshotBlock: React.FC<UrlScreenshotTool & ToolAddons> = ({
 	url,
 	approvalState,
-	onApprove,
-	onReject,
+
 	tool,
 	base64Image,
 	ts,
@@ -702,9 +555,7 @@ export const UrlScreenshotBlock: React.FC<UrlScreenshotTool & ToolAddons> = ({
 		icon={Image}
 		title="URL Screenshot"
 		variant="accent"
-		approvalState={approvalState}
-		onApprove={onApprove}
-		onReject={onReject}>
+		approvalState={approvalState}>
 		<p className="text-xs">
 			<span className="font-semibold">Website:</span> {url}
 		</p>
@@ -715,12 +566,54 @@ export const UrlScreenshotBlock: React.FC<UrlScreenshotTool & ToolAddons> = ({
 		)}
 	</ToolBlock>
 )
-
-export const AskConsultantBlock: React.FC<AskConsultantTool & ToolAddons> = ({
-	query,
+export const SearchSymbolBlock: React.FC<SearchSymbolsTool & ToolAddons> = ({
+	symbolName,
+	content,
 	approvalState,
-	onApprove,
-	onReject,
+	tool,
+	ts,
+	...rest
+}) => {
+	const [isOpen, setIsOpen] = React.useState(false)
+
+	return (
+		<ToolBlock
+			{...rest}
+			ts={ts}
+			tool={tool}
+			icon={Search}
+			title="Search Symbols"
+			variant="accent"
+			approvalState={approvalState}>
+			<p className="text-xs">
+				<span className="font-semibold">Symbol:</span> {symbolName}
+			</p>
+			{content && (
+				<Collapsible open={isOpen} onOpenChange={setIsOpen} className="mt-2">
+					<CollapsibleTrigger asChild>
+						<Button variant="ghost" size="sm" className="flex items-center w-full justify-between">
+							<span>View Results</span>
+							{isOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+						</Button>
+					</CollapsibleTrigger>
+					<CollapsibleContent className="mt-2">
+						<ScrollArea className="h-[200px] w-full rounded-md border">
+							<div className="bg-secondary/20 p-3 rounded-md text-sm">
+								<pre className="whitespace-pre-wrap">{content}</pre>
+							</div>
+							<ScrollBar orientation="vertical" />
+						</ScrollArea>
+					</CollapsibleContent>
+				</Collapsible>
+			)}
+		</ToolBlock>
+	)
+}
+
+export const AddInterestedFileBlock: React.FC<AddInterestedFileTool & ToolAddons> = ({
+	path,
+	why,
+	approvalState,
 	tool,
 	ts,
 	...rest
@@ -729,51 +622,180 @@ export const AskConsultantBlock: React.FC<AskConsultantTool & ToolAddons> = ({
 		{...rest}
 		ts={ts}
 		tool={tool}
-		icon={MessageCircle}
-		title="Ask Consultant"
-		variant="primary"
-		approvalState={approvalState}
-		onApprove={onApprove}
-		onReject={onReject}>
-		<div className="bg-primary/20 text-primary-foreground p-2 rounded text-xs">{query}</div>
+		icon={FileText}
+		title="Track File"
+		variant="info"
+		approvalState={approvalState}>
+		<p className="text-xs">
+			<span className="font-semibold">File:</span> {path}
+		</p>
+		<p className="text-xs">
+			<span className="font-semibold">Reason:</span> {why}
+		</p>
 	</ToolBlock>
 )
 
-export const ToolContentBlock: React.FC<{
-	tool: ChatTool & {
-		onApprove?: () => void
-		onReject?: (feedback: string) => void
-	}
+export const FileChangesPlanBlock: React.FC<
+	FileChangePlanTool &
+		ToolAddons & {
+			innerThoughts?: string
+			innerSelfCritique?: string
+			rejectedString?: string
+		}
+> = ({
+	path,
+	what_to_accomplish,
+	approvalState,
+	tool,
+	ts,
+	innerThoughts = "",
+	innerSelfCritique = "",
+	rejectedString,
+	...rest
+}) => {
+	const [isReasoningOpen, setIsReasoningOpen] = React.useState(false)
+
+	return (
+		<ToolBlock
+			{...rest}
+			ts={ts}
+			tool={tool}
+			icon={FileText}
+			title="File Changes Plan"
+			variant="info"
+			approvalState={approvalState}>
+			<div className="text-xs space-y-3">
+				<div className="space-y-1">
+					<p>
+						<span className="font-semibold">File:</span> {path}
+					</p>
+					<div>
+						<span className="font-semibold">What to accomplish:</span>
+						<div className="mt-1 bg-muted p-2 rounded-md">
+							<MarkdownRenderer markdown={what_to_accomplish?.trim() ?? ""} />
+						</div>
+					</div>
+				</div>
+
+				{(innerThoughts.trim() || innerSelfCritique.trim()) && (
+					<Collapsible
+						open={isReasoningOpen}
+						onOpenChange={setIsReasoningOpen}
+						className="border-t pt-3 mt-3">
+						<CollapsibleTrigger asChild>
+							<Button variant="ghost" size="sm" className="flex items-center w-full justify-between px-0">
+								<div className="flex items-center space-x-2">
+									<MessageCircle className="h-4 w-4 text-info" />
+									<span className="font-medium">View Kodu Reasoning Steps</span>
+								</div>
+								{isReasoningOpen ? (
+									<ChevronUp className="h-4 w-4" />
+								) : (
+									<ChevronDown className="h-4 w-4" />
+								)}
+							</Button>
+						</CollapsibleTrigger>
+						<CollapsibleContent className="mt-2 space-y-3">
+							{innerThoughts.trim() && (
+								<div className="bg-secondary/20 p-2 rounded-md">
+									<h4 className="font-semibold flex items-center space-x-2 mb-1 text-xs uppercase tracking-wide text-secondary-foreground">
+										<HelpCircle className="h-3 w-3" />
+										<span>Inner Thoughts</span>
+									</h4>
+									<MarkdownRenderer markdown={innerThoughts.trim()} />
+								</div>
+							)}
+							{innerSelfCritique.trim() && (
+								<div className="bg-secondary/20 p-2 rounded-md">
+									<h4 className="font-semibold flex items-center space-x-2 mb-1 text-xs uppercase tracking-wide text-secondary-foreground">
+										<AlertCircle className="h-3 w-3" />
+										<span>Inner Self-Critique</span>
+									</h4>
+									<MarkdownRenderer markdown={innerSelfCritique.trim()} />
+								</div>
+							)}
+						</CollapsibleContent>
+					</Collapsible>
+				)}
+
+				{rejectedString?.trim() && (
+					<div className="bg-destructive/10 border border-destructive rounded-md p-3 mt-3">
+						<div className="flex items-center space-x-2 mb-2 text-destructive">
+							<AlertCircle className="h-4 w-4" />
+							<span className="font-semibold text-sm">Plan Rejected</span>
+						</div>
+						<p className="text-sm text-destructive-foreground">
+							Kodu decided to reject the change plan because of:
+						</p>
+						<div className="bg-destructive/20 p-2 rounded-md mt-2">
+							<MarkdownRenderer markdown={rejectedString.trim()} />
+						</div>
+					</div>
+				)}
+			</div>
+		</ToolBlock>
+	)
+}
+
+export const SubmitReviewBlock: React.FC<SubmitReviewTool & ToolAddons> = ({
+	review,
+	approvalState,
+	tool,
+	ts,
+	...rest
+}) => {
+	const [isOpen, setIsOpen] = React.useState(false)
+
+	return (
+		<ToolBlock
+			{...rest}
+			ts={ts}
+			tool={tool}
+			icon={ClipboardCheck}
+			title="Submit Review"
+			variant="accent"
+			approvalState={approvalState}>
+			<div className="text-xs space-y-3">
+				{review && (
+					<Collapsible open={isOpen} onOpenChange={setIsOpen} className="mt-2">
+						<CollapsibleTrigger asChild>
+							<Button variant="ghost" size="sm" className="flex items-center w-full justify-between">
+								<span>View Review</span>
+								{isOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+							</Button>
+						</CollapsibleTrigger>
+						<CollapsibleContent className="mt-2">
+							<ScrollArea className="h-[200px] w-full rounded-md border">
+								<div className="bg-secondary/20 p-3 rounded-md text-sm">
+									<MarkdownRenderer markdown={review} />
+								</div>
+								<ScrollBar orientation="vertical" />
+							</ScrollArea>
+						</CollapsibleContent>
+					</Collapsible>
+				)}
+			</div>
+		</ToolBlock>
+	)
+}
+
+export const ToolRenderer: React.FC<{
+	tool: ChatTool
 	hasNextMessage?: boolean
 }> = ({ tool }) => {
-	tool.onApprove = () => {
-		vscode.postMessage({
-			feedback: "approve",
-			toolId: tool.ts,
-			type: "toolFeedback",
-		})
-	}
-	tool.onReject = (feedback: string) => {
-		vscode.postMessage({
-			feedback: "reject",
-			toolId: tool.ts,
-			feedbackMessage: feedback,
-			type: "toolFeedback",
-		})
-	}
 	switch (tool.tool) {
 		case "execute_command":
 			return <ExecuteCommandBlock hasNextMessage {...tool} />
 		case "list_files":
 			return <ListFilesBlock {...tool} />
-		case "list_code_definition_names":
-			return <ListCodeDefinitionNamesBlock {...tool} />
+		case "explore_repo_folder":
+			return <ExploreRepoFolderBlock {...tool} />
 		case "search_files":
 			return <SearchFilesBlock {...tool} />
 		case "read_file":
 			return <ReadFileBlock {...tool} />
-		case "write_to_file":
-			return <WriteToFileBlock {...tool} />
+		case "file_editor":
+			return <FileEditorTool {...tool} />
 		case "ask_followup_question":
 			return <AskFollowupQuestionBlock {...tool} approvalState="pending" />
 		case "attempt_completion":
@@ -782,11 +804,18 @@ export const ToolContentBlock: React.FC<{
 			return <EnhancedWebSearchBlock {...tool} />
 		case "url_screenshot":
 			return <UrlScreenshotBlock {...tool} />
-		case "ask_consultant":
-			return <AskConsultantBlock {...tool} />
-
-		case "server_runner_tool":
+		case "server_runner":
 			return <DevServerToolBlock {...tool} />
+		case "search_symbol":
+			return <SearchSymbolBlock {...tool} />
+		case "add_interested_file":
+			return <AddInterestedFileBlock {...tool} />
+		case "spawn_agent":
+			return <SpawnAgentBlock {...tool} />
+		case "exit_agent":
+			return <ExitAgentBlock {...tool} />
+		case "submit_review":
+			return <SubmitReviewBlock {...tool} />
 		default:
 			return null
 	}

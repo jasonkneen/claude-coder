@@ -1,16 +1,16 @@
 // import { ApiHandler } from "@/api"
 import type {
+	ImageBlockParam,
 	MessageParam,
 	TextBlockParam,
-	ImageBlockParam,
-	ToolUseBlockParam,
 	ToolResultBlockParam,
-} from "@anthropic-ai/sdk/resources/messages.mjs"
+	ToolUseBlockParam
+} from "@anthropic-ai/sdk/resources/messages.mjs";
 // import { ToolName } from "@/shared/new-tools"
 // import { parseToolResponse } from "@/shared/format-tools"
-import { isToolResponseV2, parseToolResponse } from "../../shared/format-tools"
-import { ApiHandler } from "../../api"
-import { ToolName } from "../../agent/v1/tools/types"
+import { ToolName } from "../../agent/v1/tools/types";
+import { ApiHandler } from "../../api";
+import { isToolResponseV2, parseToolResponse } from "../../shared/format-tools";
 
 const KODU_DIFF = "kodu_diff" as const
 const KODU_CONTENT = "kodu_content" as const
@@ -227,8 +227,8 @@ export class CompressToolExecution {
 				modelId: this.apiHandler.cheapModelId ?? this.apiHandler.getModel().id,
 			})
 			for await (const message of resultStream) {
-				if (message.code === 1 && isTextBlock(message.body.anthropic.content[0])) {
-					return message.body.anthropic.content[0].text
+				if ('text' in message.body.anthropic.content[0]) {
+					return message.body.anthropic.content[0].text;
 				}
 				if (message.code === -1) {
 					throw new Error("Failed to compress output")

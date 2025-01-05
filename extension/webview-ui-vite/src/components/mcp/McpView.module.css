@@ -1,0 +1,49 @@
+.mcpContainer {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 17px 10px 20px;
+}
+
+.title {
+    color: var(--vscode-foreground);
+    margin: 0;
+}
+
+.content {
+    flex: 1;
+    overflow: auto;
+    padding: 0 20px;
+}
+
+.description {
+    color: var(--vscode-foreground);
+    font-size: 13px;
+    margin-bottom: 20px;
+    margin-top: 5px;
+}
+
+.serverList {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.settingsButton {
+    margin-top: 10px;
+    width: 100%;
+}
+
+.bottomPadding {
+    height: 20px;
+}

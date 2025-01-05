@@ -1,8 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk"
 import { ExtensionProvider } from "../../../providers/extension-provider"
-import { isV1ClaudeMessage } from "../../../shared/messages/extension-message"
 import { toolResponseToAIState } from "../../../shared/format-tools"
 import { KODU_ERROR_CODES, KoduError, koduSSEResponse } from "../../../shared/kodu"
+import { isV1ClaudeMessage } from "../../../shared/messages/extension-message"
 import { ChatTool } from "../../../shared/new-tools"
 import { ChunkProcessor } from "../chunk-proccess"
 import { StateManager } from "../state-manager"
@@ -392,8 +392,7 @@ export class TaskExecutor extends TaskExecutorUtils {
 					await this.handleApiError(new TaskError({ type: "API_ERROR", message: error.message }))
 					return
 				}
-				// @ts-expect-error
-				await this.handleApiError(new TaskError({ type: "NETWORK_ERROR", message: error.message }))
+				await this.handleApiError(new TaskError({ type: "NETWORK_ERROR", message: error?.message ?? "Network error occurred" }))
 			} else {
 				console.log("[TaskExecutor] Request was cancelled, ignoring error")
 			}
@@ -503,7 +502,6 @@ export class TaskExecutor extends TaskExecutorUtils {
 
 							// Process for tool use and get non-XML text
 							const nonXMLText = await this.toolExecutor.processToolUse(accumulatedText)
-
 							// If we were in a tool and now we're not, the chunk contained a closing tag
 							if (isChunkInsideTool && !this.toolExecutor.hasActiveTools()) {
 								// Extract text after the closing tag

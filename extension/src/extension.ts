@@ -1,17 +1,17 @@
-import * as vscode from "vscode"
-import { ExtensionProvider } from "./providers/extension-provider"
-import { amplitudeTracker } from "./utils/amplitude"
 import * as dotenv from "dotenv"
 import * as path from "path"
-import { extensionName } from "./shared/constants"
-import "./utils/path-helpers"
+import * as vscode from "vscode"
 import {
 	DIFF_VIEW_URI_SCHEME,
 	INLINE_DIFF_VIEW_URI_SCHEME,
 	INLINE_MODIFIED_URI_SCHEME,
 	MODIFIED_URI_SCHEME,
 } from "./integrations/editor/decoration-controller"
+import { ExtensionProvider } from "./providers/extension-provider"
 import { PromptStateManager } from "./providers/state/prompt-state-manager"
+import { extensionName } from "./shared/constants"
+import { amplitudeTracker } from "./utils/amplitude"
+import "./utils/path-helpers"
 
 /*
 Built using https://github.com/microsoft/vscode-webview-ui-toolkit
@@ -83,7 +83,6 @@ export function activate(context: vscode.ExtensionContext) {
 
 	// Use the console to output diagnostic information (console.log) and errors (console.error)
 	// This line of code will only be executed once when your extension is activated
-	//console.log('Congratulations, your extension "claude coder" is now active!')
 	outputChannel = vscode.window.createOutputChannel("Claude Coder")
 	const user = getCurrentUser()
 	const version = context.extension.packageJSON.version ?? "0.0.0"
@@ -96,6 +95,33 @@ export function activate(context: vscode.ExtensionContext) {
 	const sidebarProvider = new ExtensionProvider(context, outputChannel)
 	context.subscriptions.push(outputChannel)
 	console.log(`Claude Coder extension activated`)
+
+	// Register MCP button command
+	context.subscriptions.push(
+		vscode.commands.registerCommand(`${extensionName}.mcpButtonClicked`, async () => {
+			sidebarProvider?.getWebviewManager().postMessageToWebview({ 
+				type: "action", 
+				action: "mcpButtonClicked" 
+			})
+		})
+	)
+
+	// Register MCP settings command
+	context.subscriptions.push(
+		vscode.commands.registerCommand(`${extensionName}.openMcpSettings`, async () => {
+			sidebarProvider?.getWebviewManager().postMessageToWebview({ 
+				type: "openMcpSettings"
+			})
+		})
+	)
+
+	// Register MCP server restart command
+	context.subscriptions.push(
+		vscode.commands.registerCommand(`${extensionName}.restartMcpServer`, async (serverName: string) => {
+			vscode.window.showInformationMessage(`Restarting MCP server: ${serverName}`)
+			// TODO: Implement actual server restart logic
+		})
+	)
 
 	// Set up the window state change listener
 	context.subscriptions.push(
@@ -233,7 +259,41 @@ export function activate(context: vscode.ExtensionContext) {
 		}
 		// TODO: use better svg icon with light and dark variants (see https://stackoverflow.com/questions/58365687/vscode-extension-iconpath)
 		panel.iconPath = vscode.Uri.joinPath(context.extensionUri, "assets/icon.png")
-		tabProvider.resolveWebviewView(panel)
+		// Create a wrapper that implements WebviewView interface
+		// Create visibility event emitter
+		const visibilityEmitter = new vscode.EventEmitter<void>()
+		const disposables: vscode.Disposable[] = []
+
+		// Handle panel view state changes
+		disposables.push(
+			panel.onDidChangeViewState(() => {
+				visibilityEmitter.fire()
+			})
+		)
+
+		// Create a wrapper that implements WebviewView
+		// Create dispose event emitter
+		const disposeEmitter = new vscode.EventEmitter<void>()
+		disposables.push(
+			panel.onDidDispose(() => {
+				disposeEmitter.fire()
+				visibilityEmitter.dispose()
+				disposeEmitter.dispose()
+				disposables.forEach(d => d.dispose())
+			})
+		)
+
+		const webviewWrapper: vscode.WebviewView = {
+			webview: panel.webview,
+			onDidChangeVisibility: visibilityEmitter.event,
+			onDidDispose: disposeEmitter.event,
+			show: () => panel.reveal(),
+			viewType: ExtensionProvider.tabPanelId,
+			title: panel.title,
+			description: "",
+			visible: true
+		}
+		tabProvider.resolveWebviewView(webviewWrapper)
 		console.log("Opened Claude Coder in new tab")
 
 		// Lock the editor group so clicking on files doesn't open over the panel
@@ -263,6 +323,14 @@ export function activate(context: vscode.ExtensionContext) {
 			sidebarProvider
 				?.getWebviewManager()
 				?.postMessageToWebview({ type: "action", action: "historyButtonTapped" })
+		})
+	)
+
+	context.subscriptions.push(
+		vscode.commands.registerCommand(`${extensionName}.mcpButtonClicked`, () => {
+			sidebarProvider
+				?.getWebviewManager()
+				?.postMessageToWebview({ type: "action", action: "mcpButtonClicked" })
 		})
 	)
 
