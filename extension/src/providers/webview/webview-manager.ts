@@ -13,6 +13,8 @@ import { AmplitudeWebviewManager } from "../../utils/amplitude/manager"
 import { ExtensionProvider } from "../extension-provider"
 import { GlobalStateManager } from "../state/global-state-manager"
 import { PromptManager } from "./prompt-manager"
+import { ExtensionContext } from "../../router/utils/context"
+import { ExtensionServer } from "../../router/utils/extension-server"
 
 /**
  * Represents an item in the file tree structure.
@@ -78,7 +80,11 @@ export class WebviewManager {
 			localResourceRoots: [this.provider.getContext().extensionUri],
 		}
 		webviewView.webview.html = this.getHtmlContent(webviewView.webview)
+		// your extension context
+		const ctx: ExtensionContext = { provider: this.provider, userId: "someUser" }
 
+		// attach the server
+		new ExtensionServer(webviewView.webview, ctx)
 		this.setWebviewMessageListener(webviewView.webview)
 
 		if ("onDidChangeViewState" in webviewView) {
@@ -395,12 +401,6 @@ export class WebviewManager {
 							.getTaskManager()
 							.handleNewTask(message.text, message.images, message.attachements)
 						break
-					case "apiConfiguration":
-						if (message.apiConfiguration) {
-							await this.provider.getApiManager().updateApiConfiguration(message.apiConfiguration)
-							await this.postBaseStateToWebview()
-						}
-						break
 
 					case "autoCloseTerminal":
 						await this.provider.getStateManager().setAutoCloseTerminal(message.bool)
@@ -437,9 +437,7 @@ export class WebviewManager {
 						// trigger vscode.commands.registerCommand(`${extensionName}.setApiKey`
 						vscode.commands.executeCommand(`${extensionName}.setApiKey`)
 						break
-					case "switchAutomaticMode":
-						await this.provider.getTaskManager().switchAutomaticMode()
-						break
+
 					case "pauseNext":
 						await this.provider.getKoduDev()?.taskExecutor.pauseNextRequest()
 						break
@@ -495,13 +493,13 @@ export class WebviewManager {
 						await this.postBaseStateToWebview()
 						break
 					case "viewFile":
-						await this.provider.getKoduDev()?.viewFileInDiff(message.path, message.version)
+						// await this.provider.getKoduDev()?.viewFileInDiff(message.path, message.version)
 						break
-					case "rollbackToCheckpoint":
-						await this.provider
-							.getKoduDev()
-							?.rollbackToCheckpoint(message.path, message.version, message.ts)
-						break
+					// case "rollbackToCheckpoint":
+					// 	await this.provider
+					// 		.getKoduDev()
+					// 		?.rollbackToCheckpoint(message.path, message.version, message.ts)
+					// 	break
 					case "resetState":
 						await this.provider.getGlobalStateManager().resetState()
 						await this.provider.getSecretStateManager().resetState()

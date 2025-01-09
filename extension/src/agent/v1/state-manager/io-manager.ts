@@ -1,6 +1,7 @@
 // src/state-manager/io-manager.ts
 import fs from "fs/promises"
 import path from "path"
+import { writeFile } from "atomically"
 import { ApiHistoryItem, ClaudeMessage, FileVersion, SubAgentState } from "../types"
 
 interface IOManagerOptions {
@@ -9,8 +10,14 @@ interface IOManagerOptions {
 	agentHash?: string
 }
 
+type WriteOperation = {
+	type: "claudeMessages" | "apiHistory" | "subAgentState" | "fileVersion"
+	data: any
+	filePath: string
+}
+
 /**
- * IOManager now handles all file I/O directly without a worker.
+ * IOManager now handles all file I/O in the background using a queue.
  * It is responsible for:
  * - Ensuring directories exist
  * - Reading/writing Claude messages and API history
@@ -20,11 +27,16 @@ export class IOManager {
 	private fsPath: string
 	private taskId: string
 	private _agentHash?: string
+	private writeQueue: WriteOperation[] = []
+	private isFlushing: boolean = false
 
 	constructor(options: IOManagerOptions) {
 		this.fsPath = options.fsPath
 		this.taskId = options.taskId
 		this._agentHash = options.agentHash
+
+		// Start the background flush loop
+		setInterval(() => this.flushQueue(), 20)
 	}
 
 	public get agentHash(): string | undefined {
@@ -54,7 +66,7 @@ export class IOManager {
 	public async saveSubAgentState(state: SubAgentState): Promise<void> {
 		const subAgentDir = await this.getSubAgentDirectory()
 		const stateFilePath = path.join(subAgentDir, "state.json")
-		await fs.writeFile(stateFilePath, JSON.stringify(state, null, 2))
+		this.enqueueWriteOperation("subAgentState", state, stateFilePath)
 	}
 
 	public async loadSubAgentState(): Promise<SubAgentState | undefined> {
@@ -95,13 +107,8 @@ export class IOManager {
 	}
 
 	public async saveClaudeMessages(messages: ClaudeMessage[]): Promise<void> {
-		this.getClaudeMessagesFilePath()
-			.then((filePath) => {
-				const data = JSON.stringify(messages, null, 2)
-				// Fire and forget
-				fs.writeFile(filePath, data).catch((err) => console.error("Failed to save Claude messages:", err))
-			})
-			.catch((err) => console.error("Failed to get Claude messages file path:", err))
+		const filePath = await this.getClaudeMessagesFilePath()
+		this.enqueueWriteOperation("claudeMessages", messages, filePath)
 	}
 
 	// ---------- API History I/O ----------
@@ -119,13 +126,8 @@ export class IOManager {
 	}
 
 	public async saveApiHistory(history: ApiHistoryItem[]): Promise<void> {
-		this.getApiHistoryFilePath()
-			.then((filePath) => {
-				const data = JSON.stringify(history, null, 2)
-				// Fire and forget
-				fs.writeFile(filePath, data).catch((err) => console.error("Failed to save API history:", err))
-			})
-			.catch((err) => console.error("Failed to get API history file path:", err))
+		const filePath = await this.getApiHistoryFilePath()
+		this.enqueueWriteOperation("apiHistory", history, filePath)
 	}
 
 	// ---------- File Versions I/O ----------
@@ -147,7 +149,7 @@ export class IOManager {
 			content: file.content,
 			createdAt: file.createdAt,
 		}
-		await fs.writeFile(versionFilePath, JSON.stringify(data, null, 2))
+		this.enqueueWriteOperation("fileVersion", data, versionFilePath)
 	}
 
 	public async deleteFileVersion(file: FileVersion): Promise<void> {
@@ -211,38 +213,6 @@ export class IOManager {
 		return result
 	}
 
-	// ---------- Hooks ----------
-
-	private async getHookDirectory(): Promise<string> {
-		const taskDir = await this.ensureTaskDirectoryExists()
-		const hookDir = path.join(taskDir, "hooks")
-		await fs.mkdir(hookDir, { recursive: true })
-		return hookDir
-	}
-
-	public async saveHookData(
-		hookName: string,
-		data: {
-			requestsSinceLastTrigger: number
-		}
-	): Promise<void> {
-		const hookDir = await this.getHookDirectory()
-		const hookFilePath = path.join(hookDir, `${hookName}.json`)
-		await fs.writeFile(hookFilePath, JSON.stringify(data, null, 2))
-	}
-
-	public async loadHookData(hookName: string): Promise<{ requestsSinceLastTrigger: number } | undefined> {
-		const hookDir = await this.getHookDirectory()
-		const hookFilePath = path.join(hookDir, `${hookName}.json`)
-
-		try {
-			const data = await fs.readFile(hookFilePath, "utf8")
-			return JSON.parse(data)
-		} catch {
-			return undefined
-		}
-	}
-
 	// ---------- Utility ----------
 
 	private encodeFilePath(filePath: string): string {
@@ -253,5 +223,33 @@ export class IOManager {
 	private decodeFilePath(encoded: string): string {
 		const decoded = Buffer.from(encoded, "base64").toString("utf-8")
 		return decoded.replace(/___/g, path.sep)
+	}
+
+	// ---------- Background Queue Management ----------
+
+	private enqueueWriteOperation(type: WriteOperation["type"], data: any, filePath: string): void {
+		this.writeQueue.push({ type, data, filePath })
+	}
+
+	private async flushQueue(): Promise<void> {
+		if (this.isFlushing || this.writeQueue.length === 0) {
+			return
+		}
+
+		this.isFlushing = true
+
+		try {
+			const operation = this.writeQueue.shift()
+			if (operation) {
+				const { type, data, filePath } = operation
+				const jsonData = JSON.stringify(data, null, 2)
+
+				await writeFile(filePath, jsonData).catch((err) => {
+					console.error(`Failed to save ${type}:`, err)
+				})
+			}
+		} finally {
+			this.isFlushing = false
+		}
 	}
 }

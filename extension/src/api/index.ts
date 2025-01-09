@@ -1,10 +1,12 @@
-import { Anthropic } from "@anthropic-ai/sdk"
-import { ApiHandlerOptions, ApiModelId, KoduModelId, ModelInfo } from "../shared/api"
+import type { Anthropic } from "@anthropic-ai/sdk"
 import { KoduHandler } from "./providers/kodu"
-import { AskConsultantResponseDto, SummaryResponseDto, WebSearchResponseDto } from "./interfaces"
-import { z } from "zod"
+import { WebSearchResponseDto } from "./interfaces"
 import { koduSSEResponse } from "../shared/kodu"
 import { ApiHistoryItem } from "../agent/v1"
+import { CustomApiHandler } from "./providers/custom-provider"
+import { ProviderId } from "./providers/constants"
+import { ModelInfo, ProviderConfig } from "./providers/types"
+import { z } from "zod"
 
 export interface ApiHandlerMessageResponse {
 	message: Anthropic.Messages.Message | Anthropic.Beta.PromptCaching.Messages.PromptCachingBetaMessage
@@ -14,9 +16,18 @@ export interface ApiHandlerMessageResponse {
 }
 
 export type ApiConfiguration = {
-	koduApiKey?: string
-	apiModelId?: KoduModelId
-	browserModelId?: string
+	providerId: ProviderId
+	modelId: string
+	koduApiKey: string
+}
+
+export type ApiHandlerOptions = Omit<ProviderConfig, "models"> & {
+	model: ProviderConfig["models"][number]
+}
+
+export type ApiConstructorOptions = {
+	providerSettings: ProviderSettings
+	model: ProviderConfig["models"][number]
 }
 
 export interface ApiHandler {
@@ -35,7 +46,7 @@ export interface ApiHandler {
 		abortSignal: AbortSignal | null
 		top_p?: number
 		tempature?: number
-		modelId: KoduModelId
+		modelId: string
 		appendAfterCacheToLastMessage?: (lastMessage: Anthropic.Messages.Message) => void
 		updateAfterCacheInserts?: (
 			messages: ApiHistoryItem[],
@@ -43,13 +54,9 @@ export interface ApiHandler {
 		) => Promise<[ApiHistoryItem[], Anthropic.Beta.PromptCaching.Messages.PromptCachingBetaTextBlockParam[]]>
 	}): AsyncIterableIterator<koduSSEResponse>
 
-	get options(): ApiHandlerOptions
+	get options(): ApiConstructorOptions
 
-	get cheapModelId(): string | undefined
-
-	getModel(): { id: ApiModelId; info: ModelInfo }
-
-	abortRequest(): void
+	getModel(): { id: string; info: ModelInfo }
 
 	sendWebSearchRequest?(
 		searchQuery: string,
@@ -60,8 +67,11 @@ export interface ApiHandler {
 	): AsyncIterable<WebSearchResponseDto>
 }
 
-export function buildApiHandler(configuration: ApiConfiguration): ApiHandler {
-	return new KoduHandler({ koduApiKey: configuration.koduApiKey, apiModelId: configuration.apiModelId })
+export function buildApiHandler(configuration: ApiConstructorOptions): ApiHandler {
+	if (configuration.providerSettings.providerId !== "kodu") {
+		return new CustomApiHandler(configuration)
+	}
+	return new KoduHandler(configuration)
 }
 
 export function withoutImageData(
@@ -91,3 +101,21 @@ export function withoutImageData(
 		return part
 	})
 }
+export const providerSettingsSchema = z.object({
+	// id: z.string(),
+	providerId: z.string(),
+	modelId: z.string().optional(),
+	apiKey: z.string().optional(),
+	// Google Vertex specific fields
+	clientEmail: z.string().optional(),
+	privateKey: z.string().optional(),
+	project: z.string().optional(),
+	location: z.string().optional(),
+	// Amazon Bedrock specific fields
+	region: z.string().optional(),
+	accessKeyId: z.string().optional(),
+	secretAccessKey: z.string().optional(),
+	sessionToken: z.string().optional(),
+})
+
+export type ProviderSettings = z.infer<typeof providerSettingsSchema>

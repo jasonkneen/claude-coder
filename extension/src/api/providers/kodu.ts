@@ -1,7 +1,6 @@
 import { Anthropic } from "@anthropic-ai/sdk"
 import axios, { CancelTokenSource } from "axios"
-import { ApiHandler, withoutImageData } from ".."
-import { ApiHandlerOptions, KoduModelId, ModelInfo, koduDefaultModelId, koduModels } from "../../shared/api"
+import { ApiConstructorOptions, ApiHandler, ApiHandlerOptions, withoutImageData } from ".."
 import {
 	KODU_ERROR_CODES,
 	KoduError,
@@ -14,6 +13,8 @@ import {
 import { WebSearchResponseDto } from "../interfaces"
 import { ApiHistoryItem } from "../../agent/v1"
 import { cloneDeep } from "lodash"
+import delay from "delay"
+import { ModelInfo } from "./types"
 
 export async function fetchKoduUser({ apiKey }: { apiKey: string }) {
 	const response = await axios.get(getKoduCurrentUser(), {
@@ -36,18 +37,14 @@ export async function fetchKoduUser({ apiKey }: { apiKey: string }) {
 // const findLastMessageTextMsg
 
 export class KoduHandler implements ApiHandler {
-	private _options: ApiHandlerOptions
+	private _options: ApiConstructorOptions
 	private cancelTokenSource: CancelTokenSource | null = null
 
 	get options() {
 		return this._options
 	}
 
-	get cheapModelId() {
-		return this._options.cheapModelId
-	}
-
-	constructor(options: ApiHandlerOptions) {
+	constructor(options: ApiConstructorOptions) {
 		this._options = options
 	}
 
@@ -134,6 +131,7 @@ export class KoduHandler implements ApiHandler {
 			messages: messagesToCache,
 			temperature: tempature ?? 0.1,
 			top_p: top_p ?? undefined,
+			stop_sequences: ["</kodu_action>"],
 		}
 		this.cancelTokenSource = axios.CancelToken.source()
 
@@ -145,7 +143,7 @@ export class KoduHandler implements ApiHandler {
 			{
 				headers: {
 					"Content-Type": "application/json",
-					"x-api-key": this._options.koduApiKey || "",
+					"x-api-key": this._options.providerSettings.apiKey || "",
 					"continue-generation": "true",
 				},
 				responseType: "stream",
@@ -182,10 +180,23 @@ export class KoduHandler implements ApiHandler {
 						if (eventData.code === 2) {
 							// -> Happens to the current message
 							// We have a partial response, so we need to add it to the message shown to the user and refresh the UI
-						}
-						if (eventData.code === 0) {
 						} else if (eventData.code === 1) {
+							console.log("Final response received")
+							console.log(`final content length: ${eventData.body.anthropic.content.length}`)
 							finalResponse = eventData
+							// if we hit a stop_sequence, we should yield the stop_sequence before the final response
+							if (finalResponse.body.anthropic.stop_reason === "stop_sequence") {
+								console.log("Stop sequence reached")
+								console.log(`stop_sequence: ${finalResponse.body.anthropic.stop_sequence}`)
+
+								yield {
+									code: 2,
+									body: {
+										text: "</kodu_action>",
+									},
+								}
+								await delay(50)
+							}
 						} else if (eventData.code === -1) {
 							console.error("Network / API ERROR")
 							// we should yield the error and not throw it
@@ -207,14 +218,11 @@ export class KoduHandler implements ApiHandler {
 			}
 		}
 	}
-
-	getModel(): { id: KoduModelId; info: ModelInfo } {
-		const modelId = this._options.apiModelId
-		if (modelId && modelId in koduModels) {
-			const id = modelId as KoduModelId
-			return { id, info: koduModels[id] }
+	getModel(): { id: string; info: ModelInfo } {
+		return {
+			id: this._options.model.id,
+			info: this._options.model,
 		}
-		return { id: koduDefaultModelId, info: koduModels[koduDefaultModelId] }
 	}
 
 	async *sendWebSearchRequest(
@@ -235,7 +243,7 @@ export class KoduHandler implements ApiHandler {
 			{
 				headers: {
 					"Content-Type": "application/json",
-					"x-api-key": this._options.koduApiKey || "",
+					"x-api-key": this._options.providerSettings.apiKey || "",
 				},
 				timeout: 60_000,
 				responseType: "stream",

@@ -1,12 +1,11 @@
 import * as vscode from "vscode"
 import { Anthropic } from "@anthropic-ai/sdk"
 import { ResultPromise } from "execa"
-import { ApiConfiguration } from "../../../api"
+import { ApiConfiguration, ApiConstructorOptions, ProviderSettings } from "../../../api"
 import { ExtensionProvider } from "../../../providers/extension-provider"
 import { ClaudeAskResponse } from "../../../shared/messages/client-message"
 import { HistoryItem } from "../../../shared/history-item"
 import { ClaudeMessage } from "../../../shared/messages/extension-message"
-import { KoduModelId } from "../../../shared/api"
 import { SpawnAgentOptions } from "../tools/schema/agents/agent-spawner"
 import { ToolName } from "../tools/types"
 
@@ -29,7 +28,7 @@ export type UserContent = Array<
 
 export interface KoduDevOptions {
 	provider: ExtensionProvider
-	apiConfiguration: ApiConfiguration
+	apiConfiguration: ApiConstructorOptions
 	maxRequestsPerTask?: number
 	autoSummarize?: boolean
 	terminalCompressionThreshold?: number
@@ -99,9 +98,8 @@ export type SubAgentState = {
 	name: SpawnAgentOptions
 	systemPrompt: string
 	automaticReminders?: string
-	modelId?: KoduModelId
+	modelId?: string
 	apiConversationHistory: ApiHistoryItem[]
-	interestedFiles: InterestedFile[]
 	/**
 	 * the list of diagnostics errors for the current task
 	 */
@@ -121,12 +119,8 @@ export type SubAgentState = {
 
 export interface KoduAgentState {
 	taskId: string
-	requestCount: number
 	apiConversationHistory: ApiHistoryItem[]
 	claudeMessages: ClaudeMessage[]
-	askResponse?: ClaudeAskResponse
-	currentSubAgentId?: number
-	askResponseText?: string
 	terminalCompressionThreshold?: number
 	isHistoryItem?: boolean
 	isHistoryItemResumed?: boolean
@@ -147,17 +141,6 @@ export interface KoduAgentState {
 			error: string
 		}
 	>
-	/**
-	 * the list of interested files
-	 */
-	interestedFiles: InterestedFile[]
-	askResponseImages?: string[]
-	lastMessageTs?: number
-	executeCommandRunningProcess?: ResultPromise
-	abort: boolean
-	memory?: string
-	dirAbsolutePath?: string
-	isRepoInitialized?: boolean
 }
 
 // Re-export types from other files to centralize type definitions

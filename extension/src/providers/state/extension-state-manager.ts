@@ -19,9 +19,6 @@ export class ExtensionStateManager {
 
 	async getState() {
 		const [
-			apiModelId,
-			browserModelId,
-			koduApiKey,
 			user,
 			lastShownAnnouncementId,
 			customInstructions,
@@ -36,10 +33,9 @@ export class ExtensionStateManager {
 			gitHandlerEnabled,
 			inlineEditOutputType,
 			observerHookEvery,
+			apiConfig,
+			koduApiKey,
 		] = await Promise.all([
-			this.globalStateManager.getGlobalState("apiModelId"),
-			this.globalStateManager.getGlobalState("browserModelId"),
-			this.secretStateManager.getSecretState("koduApiKey"),
 			this.globalStateManager.getGlobalState("user"),
 			this.globalStateManager.getGlobalState("lastShownAnnouncementId"),
 			this.globalStateManager.getGlobalState("customInstructions"),
@@ -54,6 +50,8 @@ export class ExtensionStateManager {
 			this.globalStateManager.getGlobalState("gitHandlerEnabled"),
 			this.globalStateManager.getGlobalState("inlineEditOutputType"),
 			this.globalStateManager.getGlobalState("observerHookEvery"),
+			this.globalStateManager.getGlobalState("apiConfig"),
+			this.secretStateManager.getSecretState("koduApiKey"),
 		])
 
 		const currentTaskId = this.context.getKoduDev()?.getStateManager()?.state.taskId
@@ -72,13 +70,11 @@ export class ExtensionStateManager {
 			.getKoduDev()
 			?.getStateManager()
 			?.apiManager.getModelInfo()?.contextWindow
+		if (apiConfig) {
+			apiConfig.koduApiKey = koduApiKey
+		}
 
 		return {
-			apiConfiguration: {
-				apiModelId,
-				koduApiKey,
-				browserModelId,
-			},
 			user,
 			terminalCompressionThreshold,
 			lastShownAnnouncementId,
@@ -101,6 +97,7 @@ export class ExtensionStateManager {
 			inlineEditOutputType: inlineEditOutputType ?? "full",
 			gitHandlerEnabled: gitHandlerEnabled ?? true,
 			observerHookEvery,
+			apiConfig,
 		} satisfies ExtensionState
 	}
 
@@ -166,22 +163,27 @@ export class ExtensionStateManager {
 	}
 
 	setCustomInstructions(value: string | undefined) {
+		this.context.getKoduDev()?.getStateManager()?.setCustomInstructions(value)
 		return this.globalStateManager.updateGlobalState("customInstructions", value)
 	}
 
 	setAutoSummarize(value: boolean) {
+		this.context.getKoduDev()?.getStateManager()?.setAutoSummarize(value)
 		return this.globalStateManager.updateGlobalState("autoSummarize", value)
 	}
 
 	setGitHandlerEnabled(value: boolean) {
+		this.context.getKoduDev()?.getStateManager()?.setGitHandlerEnabled(value)
 		return this.globalStateManager.updateGlobalState("gitHandlerEnabled", value)
 	}
 
 	setAlwaysAllowReadOnly(value: boolean) {
+		this.context.getKoduDev()?.getStateManager()?.setAlwaysAllowReadOnly(value)
 		return this.globalStateManager.updateGlobalState("alwaysAllowReadOnly", value)
 	}
 
 	setAlwaysAllowWriteOnly(value: boolean) {
+		this.context.getKoduDev()?.getStateManager()?.setAlwaysAllowWriteOnly(value)
 		return this.globalStateManager.updateGlobalState("alwaysAllowWriteOnly", value)
 	}
 

@@ -1,5 +1,4 @@
 import { ToolName } from "../../agent/v1/tools/types"
-import { ApiConfiguration } from "../../api"
 import { GlobalState } from "../../providers/state/global-state-manager"
 import { BaseExtensionState } from "./extension-message"
 
@@ -39,11 +38,6 @@ type OpenExternalLink = {
 	url: string
 }
 
-type ApiConfigurationMessage = {
-	type: "apiConfiguration"
-	apiConfiguration: NonNullable<ApiConfiguration>
-}
-
 type DebugMessage = {
 	type: "debug"
 }
@@ -74,11 +68,6 @@ export type pauseNextMessage = {
 
 export type setApiKeyDialogMessage = {
 	type: "setApiKeyDialog"
-}
-
-export type switchAutomaticModeMessage = {
-	type: "switchAutomaticMode"
-	bool: boolean
 }
 
 export type terminalCompressionThresholdMessage = {
@@ -210,7 +199,6 @@ export type WebviewMessage =
 	| setInlineEditModeMessage
 	| pauseTemporayAutoModeMessage
 	| terminalCompressionThresholdMessage
-	| switchAutomaticModeMessage
 	| setApiKeyDialogMessage
 	| pauseNextMessage
 	| autoSummarizeMessage
@@ -218,7 +206,6 @@ export type WebviewMessage =
 	| AmplitudeWebviewMessage
 	| OpenExternalLink
 	| autoCloseTerminalMessage
-	| ApiConfigurationMessage
 	| RenameTask
 	| DebugMessage
 	| customInstructionsMessage

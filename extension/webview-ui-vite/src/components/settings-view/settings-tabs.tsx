@@ -5,7 +5,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import UserInfoSection from "./user-info-section"
-import PreferencesTab from "./preferences-tab"
 import ExperimentalTab from "./experimental-tab"
 import AdvancedTab from "./advanced-tab"
 import AgentsTab from "./agents-tab"
@@ -13,6 +12,7 @@ import ClosePageButton from "./close-page-button"
 import { SettingsFooter } from "./settings-footer"
 import { Label } from "../ui/label"
 import { Separator } from "../ui/separator"
+import PreferencesTabNew from "./preferences/preferences-tab"
 
 const tabItems = [
 	{ value: "preferences", label: "Preferences" },
@@ -78,7 +78,7 @@ const SettingsPage: React.FC = () => {
 			)}
 
 			<div className="mt-4">
-				{activeTab === "preferences" && <PreferencesTab />}
+				{activeTab === "preferences" && <PreferencesTabNew />}
 				{activeTab === "experimental" && <ExperimentalTab />}
 				{activeTab === "advanced" && <AdvancedTab />}
 				{activeTab === "agents" && <AgentsTab />}

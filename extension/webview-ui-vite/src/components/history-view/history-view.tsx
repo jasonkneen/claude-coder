@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react"
+import { useState, useEffect, useMemo, useCallback } from "react"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
@@ -19,7 +19,9 @@ import {
 	DialogHeader,
 	DialogTrigger,
 } from "../ui/dialog"
-
+import { ArchiveRestore } from "lucide-react"
+import { WebviewTransport, createAppClient } from "../../../../src/shared/rpc-client"
+import { rpcClient } from "@/lib/rpc-client"
 type SortOption = "newest" | "oldest" | "mostExpensive" | "mostTokens" | "mostRelevant"
 
 type HistoryViewProps = {
@@ -79,10 +81,12 @@ const highlight = (
 }
 
 const HistoryView = ({ onDone }: HistoryViewProps) => {
+	// Create a typed client *only using the type* AppRouter
 	const { taskHistory } = useExtensionState()
 	const [searchQuery, setSearchQuery] = useState("")
 	const [sortOption, setSortOption] = useState<SortOption>("newest")
 	const [lastNonRelevantSort, setLastNonRelevantSort] = useState<SortOption | null>("newest")
+	const { mutate: restoreTaskFromDisk } = rpcClient.restoreTaskFromDisk.useMutation({})
 
 	useEffect(() => {
 		if (searchQuery && sortOption !== "mostRelevant" && !lastNonRelevantSort) {
@@ -143,6 +147,15 @@ const HistoryView = ({ onDone }: HistoryViewProps) => {
 			<div className="flex justify-between items-center p-4 pb-0">
 				<h3 className="text-lg font-semibold">History</h3>
 				<div className="flex flex-wrap gap-2">
+					<Button
+						onClick={async () => {
+							const res = await restoreTaskFromDisk({})
+							// console.log(`pauseTask response: ${JSON.stringify(res)}`)
+						}}
+						size="sm"
+						variant="ghost">
+						<ArchiveRestore className="w-4 h-4" />
+					</Button>
 					<Dialog>
 						<DialogTrigger asChild>
 							<Button size="sm" variant="destructive">

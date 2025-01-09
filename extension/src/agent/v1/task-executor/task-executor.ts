@@ -21,14 +21,17 @@ export class TaskExecutor extends TaskExecutorUtils {
 	private isAborting: boolean = false
 	private streamPaused: boolean = false
 	private textBuffer: string = ""
-	private currentReplyId: number | null = null
+	private _currentReplyId: number | null = null
 	private pauseNext: boolean = false
 	private lastResultWithCommit: ToolResponseV2 | undefined = undefined
-	private lastUIUpdateAt: number = 0
 
 	constructor(stateManager: StateManager, toolExecutor: ToolExecutor, providerRef: WeakRef<ExtensionProvider>) {
 		super(stateManager, providerRef)
 		this.toolExecutor = toolExecutor
+	}
+
+	get currentReplyId(): number | null {
+		return this._currentReplyId
 	}
 
 	get abortController(): AbortController | null {
@@ -42,8 +45,8 @@ export class TaskExecutor extends TaskExecutorUtils {
 	public async pauseStream() {
 		if (!this.streamPaused) {
 			// Ensure any buffered content is flushed before pausing
-			if (this.currentReplyId !== null && this.textBuffer) {
-				await this.flushTextBuffer(this.currentReplyId)
+			if (this._currentReplyId !== null && this.textBuffer) {
+				await this.flushTextBuffer(this._currentReplyId)
 			}
 			this.streamPaused = true
 		}
@@ -53,8 +56,8 @@ export class TaskExecutor extends TaskExecutorUtils {
 		if (this.streamPaused) {
 			try {
 				// Ensure any pending operations are complete
-				if (this.textBuffer && this.currentReplyId) {
-					await this.flushTextBuffer(this.currentReplyId)
+				if (this.textBuffer && this._currentReplyId) {
+					await this.flushTextBuffer(this._currentReplyId)
 				}
 				this.streamPaused = false
 			} catch (err) {
@@ -69,7 +72,6 @@ export class TaskExecutor extends TaskExecutorUtils {
 		if (!this.textBuffer || !currentReplyId) {
 			return
 		}
-		let shouldWaitBeforeFlush = Date.now() - this.lastUIUpdateAt < 10
 		const contentToFlush = this.textBuffer
 		this.textBuffer = "" // Clear buffer immediately
 
@@ -81,18 +83,14 @@ export class TaskExecutor extends TaskExecutorUtils {
 		if (lastAskTs && lastAskTs > currentReplyId && contentToFlush.trim().length > 0) {
 			console.log(`New ask message detected, flushing buffer and pausing stream`)
 			// Create new message to maintain order
-			this.currentReplyId = await this.say("text", contentToFlush, undefined, Date.now(), {
+			this._currentReplyId = await this.say("text", contentToFlush, undefined, Date.now(), {
 				isSubMessage: true,
 			})
 		} else {
 			// Process UI updates in parallel with fire-and-forget
 			void this.stateManager.providerRef.deref()?.getWebviewManager()?.postBaseStateToWebview()
-			void this.stateManager.claudeMessagesManager.appendToClaudeMessage(currentReplyId, contentToFlush, true)
-			if (shouldWaitBeforeFlush) {
-				await new Promise((resolve) => setTimeout(resolve, 10))
-			}
+			await this.stateManager.claudeMessagesManager.appendToClaudeMessage(currentReplyId, contentToFlush, true)
 		}
-		this.lastUIUpdateAt = Date.now()
 	}
 
 	public async newMessage(message: UserContent) {
@@ -306,7 +304,7 @@ export class TaskExecutor extends TaskExecutorUtils {
 			this._abortController = new AbortController()
 			this.streamPaused = false
 			this.textBuffer = ""
-			this.currentReplyId = null
+			this._currentReplyId = null
 
 			// fix any weird user content
 			this.currentUserContent = this.fixUserContent(this.currentUserContent)
@@ -410,9 +408,6 @@ export class TaskExecutor extends TaskExecutorUtils {
 		try {
 			this.logState("Processing API response")
 
-			const currentReplyId = await this.say("text", "", undefined, Date.now(), { isSubMessage: true })
-
-			this.currentReplyId = currentReplyId
 			const ts = Date.now()
 
 			const apiHistoryItem: ApiHistoryItem = {
@@ -427,10 +422,11 @@ export class TaskExecutor extends TaskExecutorUtils {
 			}
 
 			let accumulatedText = ""
-			let currentChunkTime = Date.now()
 
 			const processor = new ChunkProcessor({
 				onStreamStart: async () => {
+					const currentReplyId = await this.say("text", "", undefined, Date.now(), { isSubMessage: true })
+					this._currentReplyId = currentReplyId
 					await this.stateManager.apiHistoryManager.addToApiConversationHistory(apiHistoryItem)
 				},
 				onImmediateEndOfStream: async (chunk) => {
@@ -508,12 +504,12 @@ export class TaskExecutor extends TaskExecutorUtils {
 								const afterClosingTag = accumulatedText.split("</")[1]?.split(">")[1]
 								if (afterClosingTag) {
 									this.textBuffer += afterClosingTag
-									await this.flushTextBuffer(this.currentReplyId)
+									await this.flushTextBuffer(this._currentReplyId)
 								}
 							} else if (!this.toolExecutor.hasActiveTools() && nonXMLText) {
 								// Handle normal text chunks
 								this.textBuffer += nonXMLText
-								await this.flushTextBuffer(this.currentReplyId)
+								await this.flushTextBuffer(this._currentReplyId)
 							}
 
 							accumulatedText = "" // Clear accumulated text after processing
@@ -534,7 +530,7 @@ export class TaskExecutor extends TaskExecutorUtils {
 					}
 					// Ensure all tools are processed
 					await this.toolExecutor.waitForToolProcessing()
-					this.currentReplyId = null
+					this._currentReplyId = null
 
 					await this.finishProcessingResponse(apiHistoryItem)
 				},
@@ -558,7 +554,7 @@ export class TaskExecutor extends TaskExecutorUtils {
 		this.streamPaused = false
 		this.textBuffer = ""
 		this.pauseNext = false
-		this.currentReplyId = null
+		this._currentReplyId = null
 	}
 
 	public pauseNextRequest() {
@@ -589,45 +585,43 @@ export class TaskExecutor extends TaskExecutorUtils {
 		if (currentToolResults.length > 0) {
 			const completionAttempted = currentToolResults.find((result) => result?.name === "attempt_completion")
 
-			if (completionAttempted) {
-				const content = toolResponseToAIState(completionAttempted.result)
+			this.state = TaskState.WAITING_FOR_API
+			const resultWithCommit = currentToolResults
+				.reverse()
+				.find((result) => result.result.branch && result.result.commitHash)
+			if (resultWithCommit) {
+				this.lastResultWithCommit = resultWithCommit.result
+			}
+			// we have the git commit info here
+			this.currentUserContent = currentToolResults.flatMap(({ result }) => {
+				if (result) {
+					return toolResponseToAIState(result)
+				}
+				return {
+					type: "text",
+					text: `The tool did not return a valid response.`,
+				}
+			})
+
+			if (completionAttempted && completionAttempted.result.status === "success") {
 				await this.stateManager.apiHistoryManager.addToApiConversationHistory({
 					role: "user",
-					content,
+					content: toolResponseToAIState(completionAttempted.result),
 				})
-				if (completionAttempted.result.status === "success") {
-					await this.stateManager.apiHistoryManager.addToApiConversationHistory({
-						role: "assistant",
-						content: [{ type: "text", text: "Task completed successfully." }],
-					})
-					this.state = TaskState.COMPLETED
-				} else {
-					this.state = TaskState.WAITING_FOR_API
-					this.currentUserContent = toolResponseToAIState(completionAttempted.result)
-
-					await this.makeClaudeRequest()
-				}
-			} else {
-				this.state = TaskState.WAITING_FOR_API
-				const resultWithCommit = currentToolResults
-					.reverse()
-					.find((result) => result.result.branch && result.result.commitHash)
-				if (resultWithCommit) {
-					this.lastResultWithCommit = resultWithCommit.result
-				}
-				// we have the git commit info here
-				this.currentUserContent = currentToolResults.flatMap(({ result }) => {
-					if (result) {
-						return toolResponseToAIState(result)
-					}
-					return {
-						type: "text",
-						text: `The tool did not return a valid response.`,
-					}
+				await this.stateManager.apiHistoryManager.addToApiConversationHistory({
+					role: "assistant",
+					content: [
+						{
+							type: "text",
+							text: "Task completed successfully. please let me know if you want to resume or change something.",
+						},
+					],
 				})
-
-				await this.makeClaudeRequest()
+				this.state = TaskState.COMPLETED
+				return
 			}
+
+			await this.makeClaudeRequest()
 		} else {
 			this.state = TaskState.WAITING_FOR_API
 			this.currentUserContent = [
@@ -668,13 +662,6 @@ export class TaskExecutor extends TaskExecutorUtils {
 				lastAssistantMessage.ts,
 				lastAssistantMessage
 			)
-		}
-
-		this.consecutiveErrorCount++
-		if (error.type === "PAYMENT_REQUIRED" || error.type === "UNAUTHORIZED") {
-			this.state = TaskState.IDLE
-			await this.say(error.type === "PAYMENT_REQUIRED" ? "payment_required" : "unauthorized", error.message)
-			return
 		}
 		const modifiedClaudeMessages = this.stateManager.state.claudeMessages.slice()
 		// update previous messages to ERROR
@@ -726,11 +713,17 @@ export class TaskExecutor extends TaskExecutorUtils {
 				}
 			}
 		})
+
 		// Process state updates in parallel
-		await Promise.all([
-			this.stateManager.claudeMessagesManager.overwriteClaudeMessages(modifiedClaudeMessages),
-			this.stateManager.providerRef.deref()?.getWebviewManager().postClaudeMessagesToWebview(),
-		])
+
+		await this.stateManager.claudeMessagesManager.overwriteClaudeMessages(modifiedClaudeMessages)
+		await this.stateManager.providerRef.deref()?.getWebviewManager().postClaudeMessagesToWebview()
+		this.consecutiveErrorCount++
+		if (error.type === "PAYMENT_REQUIRED" || error.type === "UNAUTHORIZED") {
+			this.state = TaskState.IDLE
+			this.say(error.type === "PAYMENT_REQUIRED" ? "payment_required" : "unauthorized", error.message)
+			return
+		}
 
 		// Handle user response
 		const { response } = await this.ask("api_req_failed", { question: error.message })

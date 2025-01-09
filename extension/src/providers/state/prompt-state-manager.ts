@@ -3,6 +3,7 @@ import path from "path"
 import { promises as fs } from "fs"
 import { mainPrompts } from "../../agent/v1/prompts/main.prompt"
 import { GlobalStateManager } from "./global-state-manager"
+import { writeFile } from "atomically"
 
 interface PromptState {
 	activePromptName: string
@@ -70,7 +71,7 @@ export class PromptStateManager {
 		await fs.mkdir(templatesDir, { recursive: true })
 
 		const templatePath = path.join(templatesDir, `${name}.txt`)
-		await fs.writeFile(templatePath, content)
+		await writeFile(templatePath, content)
 	}
 
 	public async loadTemplate(name: string): Promise<string> {
